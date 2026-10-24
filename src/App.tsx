@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS } from './engine/abi'
+import { encodeAddress, encodeCall, encodeUint, formatUnits, MAX_UINT256, SELECTORS } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
 import { parseCustomInput } from './engine/custom'
 import { DEMO_DISCLAIMER } from './engine/explain'
 import { buildPermitTypedData, parsePermitInput, ZERO_ADDRESS } from './engine/permit'
 import type { PermitParseResult } from './engine/permit'
 import { analyze } from './engine/pipeline'
-import type { AnalysisResult, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
+import type { AnalysisResult, DecodedTransaction, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
 import './App.css'
 
 const STEP_MS = 650
@@ -123,218 +123,266 @@ export default function App() {
   const customVerdict = customTx ? analyze(customTx).decision.verdict : null
   const permitVerdict = permit ? analyze(permit.tx, permit.decoded).decision.verdict : null
 
-  const isPreset = mode !== CUSTOM && mode !== PERMIT
-  const resultBlock =
-    tx && result ? (
-      <>
-        <ResultCard tx={tx} result={result} stage={stage} />
-        <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={restart} />
-      </>
+  const sourcePanel =
+    mode === CUSTOM ? (
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="panel-title">Paste transaction data</h2>
+          <span className="tag">Simulated · read-only</span>
+        </div>
+        <form
+          className="custom-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submitCustom()
+          }}
+        >
+          <label>
+            <span className="field-label">to <span className="muted">(contract address)</span></span>
+            <input
+              className={errors.to ? 'invalid' : ''}
+              value={toInput}
+              onChange={(e) => setToInput(e.target.value)}
+              placeholder="0x…"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            {errors.to && <span className="field-error">{errors.to}</span>}
+          </label>
+          <label>
+            <span className="field-label">data <span className="muted">(calldata hex)</span></span>
+            <textarea
+              className={errors.data ? 'invalid' : ''}
+              value={dataInput}
+              onChange={(e) => setDataInput(e.target.value)}
+              placeholder="0x095ea7b3…"
+              rows={4}
+              spellCheck={false}
+            />
+            {errors.data && <span className="field-error">{errors.data}</span>}
+          </label>
+          <div className="samples">
+            <span className="muted">Fill sample:</span>
+            {SAMPLES.map((s) => (
+              <button type="button" key={s.label} className="chip" onClick={() => loadSample(s.data)}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <button type="submit" className="primary">Analyze</button>
+          <p className="form-note">
+            Decodes ERC-20 <code>approve</code>, <code>transfer</code>, and <code>balanceOf</code>. Analyzed as if proposed from the simulated demo wallet on chain 1 with 0 ETH. {DEMO_DISCLAIMER}
+          </p>
+        </form>
+      </section>
+    ) : mode === PERMIT ? (
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="panel-title">Paste permit typed data</h2>
+          <span className="tag">Simulated · read-only</span>
+        </div>
+        <form
+          className="custom-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submitPermit()
+          }}
+        >
+          <label>
+            <span className="field-label">typed data <span className="muted">(EIP-712 JSON)</span></span>
+            <textarea
+              className={permitError ? 'invalid' : ''}
+              value={permitInput}
+              onChange={(e) => setPermitInput(e.target.value)}
+              placeholder='{ "types": …, "primaryType": "Permit", "domain": …, "message": … }'
+              rows={8}
+              spellCheck={false}
+            />
+            {permitError && <span className="field-error">{permitError}</span>}
+          </label>
+          <div className="samples">
+            <span className="muted">Fill sample:</span>
+            {PERMIT_SAMPLES.map((s) => (
+              <button
+                type="button"
+                key={s.label}
+                className="chip"
+                onClick={() => {
+                  setPermitInput(s.json)
+                  setPermitError(null)
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <button type="submit" className="primary">Analyze</button>
+          <p className="form-note">
+            Decodes only standard EIP-2612 <code>Permit</code> fields: owner, spender, value, nonce, and deadline. Signatures are not verified. {DEMO_DISCLAIMER}
+          </p>
+        </form>
+      </section>
     ) : (
-      <section className="card empty">
-        {mode === PERMIT ? (
-          <>Paste EIP-712 permit typed data, then press Analyze.</>
-        ) : (
-          <>Enter a <code>to</code> address and <code>data</code>, then press Analyze.</>
-        )}
+      <section className="panel">
+        <div className="panel-head">
+          <h2 className="panel-title">Agent proposal</h2>
+          <span className="tag">Simulated</span>
+        </div>
+        <div className="chat">
+          <div className="bubble user"><span className="who">You</span>{active!.userRequest}</div>
+          <div className="bubble agent"><span className="who">AI agent</span>{active!.agentRationale}</div>
+        </div>
+        <details className="disclosure">
+          <summary>Raw proposed transaction</summary>
+          <pre className="raw-pre">{toJson(active!.tx)}</pre>
+        </details>
       </section>
     )
 
+  const ownRows = [
+    { id: CUSTOM, title: 'Paste a transaction', sub: 'to · data', verdict: customVerdict },
+    { id: PERMIT, title: 'Paste a permit', sub: 'EIP-712 typed data', verdict: permitVerdict },
+  ]
+
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <ShieldIcon />
-          <div>
-            <h1>AgentShield</h1>
-            <p className="tagline">Understand what you’re approving before you sign.</p>
-            <p className="subtag">Plain-language checks for AI-proposed Ethereum transactions</p>
+      <div className="shell">
+        <header className="topbar">
+          <div className="brand">
+            <ShieldIcon />
+            <div>
+              <h1>AgentShield</h1>
+              <p className="tagline">Understand what you’re approving before you sign.</p>
+            </div>
           </div>
-        </div>
-        <div className="topbar-badges">
-          <span className="badge badge-sim">Simulated demo</span>
-          <span className="badge badge-muted">No wallet connected · nothing is signed or sent</span>
-        </div>
-      </header>
+          <span className="badge-sim">Simulated demo · no wallet connected</span>
+        </header>
 
-      <div className="layout">
-        <aside className="sidebar">
-          <h2 className="section-label">Simulated cases</h2>
-          {SIMULATED_CASES.map((c, i) => {
-            const v = verdictByCase[c.id]
-            return (
-              <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)}>
-                <span className="case-num">{i + 1}</span>
-                <span className="case-text">
-                  <span className="case-title">{c.title}</span>
-                  <span className="case-sub">{c.subtitle}</span>
-                </span>
-                <span className={`pill pill-${v.toLowerCase()}`}>{v}</span>
-              </button>
-            )
-          })}
-          <h2 className="section-label spaced">Your own data</h2>
-          <button className={`case-card ${mode === CUSTOM ? 'active' : ''}`} onClick={() => select(CUSTOM)}>
-            <span className="case-num">+</span>
-            <span className="case-text">
-              <span className="case-title">Paste a transaction</span>
-              <span className="case-sub">to · data</span>
-            </span>
-            {customVerdict && <span className={`pill pill-${customVerdict.toLowerCase()}`}>{customVerdict}</span>}
-          </button>
-          <button className={`case-card ${mode === PERMIT ? 'active' : ''}`} onClick={() => select(PERMIT)}>
-            <span className="case-num">+</span>
-            <span className="case-text">
-              <span className="case-title">Paste a permit</span>
-              <span className="case-sub">EIP-712 typed data</span>
-            </span>
-            {permitVerdict && <span className={`pill pill-${permitVerdict.toLowerCase()}`}>{permitVerdict}</span>}
-          </button>
-          <div className="sidebar-note">
-            All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
-          </div>
-        </aside>
-
-        <main className="main">
-          {isPreset && resultBlock}
-          {mode === CUSTOM ? (
-            <section className="card">
-              <div className="card-head">
-                <h2>Paste transaction data</h2>
-                <span className="badge badge-sim small">Simulated · read-only</span>
+        <div className="layout">
+          <aside className="controls">
+            <section className="panel">
+              <h2 className="panel-title">Simulated cases</h2>
+              <div className="case-list">
+                {SIMULATED_CASES.map((c, i) => (
+                  <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)} aria-pressed={c.id === mode}>
+                    <span className="case-num">{i + 1}</span>
+                    <span className="case-text">
+                      <span className="case-title">{c.title}</span>
+                      <span className="case-sub">{c.subtitle}</span>
+                    </span>
+                    <VerdictPill verdict={verdictByCase[c.id]} />
+                  </button>
+                ))}
               </div>
-              <form
-                className="custom-form"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  submitCustom()
-                }}
-              >
-                <label>
-                  <span className="field-label">to <span className="muted">(contract address)</span></span>
-                  <input
-                    className={errors.to ? 'invalid' : ''}
-                    value={toInput}
-                    onChange={(e) => setToInput(e.target.value)}
-                    placeholder="0x…"
-                    spellCheck={false}
-                    autoComplete="off"
-                  />
-                  {errors.to && <span className="field-error">{errors.to}</span>}
-                </label>
-                <label>
-                  <span className="field-label">data <span className="muted">(calldata hex)</span></span>
-                  <textarea
-                    className={errors.data ? 'invalid' : ''}
-                    value={dataInput}
-                    onChange={(e) => setDataInput(e.target.value)}
-                    placeholder="0x095ea7b3…"
-                    rows={4}
-                    spellCheck={false}
-                  />
-                  {errors.data && <span className="field-error">{errors.data}</span>}
-                </label>
-                <div className="form-row">
-                  <div className="samples">
-                    <span className="muted">Fill sample:</span>
-                    {SAMPLES.map((s) => (
-                      <button type="button" key={s.label} className="chip" onClick={() => loadSample(s.data)}>
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                  <button type="submit" className="primary">Analyze</button>
-                </div>
-                <p className="form-note">
-                  Decodes ERC-20 <code>approve</code>, <code>transfer</code>, and <code>balanceOf</code>. Analyzed as if proposed from the simulated demo wallet on chain 1 with 0 ETH. {DEMO_DISCLAIMER}
+              <h2 className="panel-title spaced">Your own data</h2>
+              <div className="case-list">
+                {ownRows.map((r) => (
+                  <button key={r.id} className={`case-card ${mode === r.id ? 'active' : ''}`} onClick={() => select(r.id)} aria-pressed={mode === r.id}>
+                    <span className="case-num">+</span>
+                    <span className="case-text">
+                      <span className="case-title">{r.title}</span>
+                      <span className="case-sub">{r.sub}</span>
+                    </span>
+                    {r.verdict && <VerdictPill verdict={r.verdict} />}
+                  </button>
+                ))}
+              </div>
+            </section>
+            {sourcePanel}
+            <p className="side-note">
+              All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
+            </p>
+          </aside>
+
+          <main className="preview-col">
+            {tx && result ? (
+              <PreviewPanel tx={tx} result={result} stage={stage} onReplay={restart} />
+            ) : (
+              <section className="preview empty">
+                <p className="preview-label">Transaction preview</p>
+                <p className="muted">
+                  {mode === PERMIT ? 'Paste EIP-712 permit typed data, then press Analyze.' : 'Enter a to address and data, then press Analyze.'}
                 </p>
-              </form>
-            </section>
-          ) : mode === PERMIT ? (
-            <section className="card">
-              <div className="card-head">
-                <h2>Paste permit typed data</h2>
-                <span className="badge badge-sim small">Simulated · read-only</span>
-              </div>
-              <form
-                className="custom-form"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  submitPermit()
-                }}
-              >
-                <label>
-                  <span className="field-label">typed data <span className="muted">(EIP-712 JSON)</span></span>
-                  <textarea
-                    className={permitError ? 'invalid' : ''}
-                    value={permitInput}
-                    onChange={(e) => setPermitInput(e.target.value)}
-                    placeholder='{ "types": …, "primaryType": "Permit", "domain": …, "message": … }'
-                    rows={10}
-                    spellCheck={false}
-                  />
-                  {permitError && <span className="field-error">{permitError}</span>}
-                </label>
-                <div className="form-row">
-                  <div className="samples">
-                    <span className="muted">Fill sample:</span>
-                    {PERMIT_SAMPLES.map((s) => (
-                      <button
-                        type="button"
-                        key={s.label}
-                        className="chip"
-                        onClick={() => {
-                          setPermitInput(s.json)
-                          setPermitError(null)
-                        }}
-                      >
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                  <button type="submit" className="primary">Analyze</button>
-                </div>
-                <p className="form-note">
-                  Decodes only standard EIP-2612 <code>Permit</code> fields: owner, spender, value, nonce, and deadline. Signatures are not verified. {DEMO_DISCLAIMER}
-                </p>
-              </form>
-            </section>
-          ) : (
-            <section className="card">
-              <div className="card-head">
-                <h2>Agent proposal</h2>
-                <span className="badge badge-sim small">Simulated</span>
-              </div>
-              <div className="chat">
-                <div className="bubble user"><span className="who">User</span>{active!.userRequest}</div>
-                <div className="bubble agent"><span className="who">AI agent</span>{active!.agentRationale}</div>
-              </div>
-              <details className="raw">
-                <summary>Raw proposed transaction</summary>
-                <pre>{toJson(active!.tx)}</pre>
-              </details>
-            </section>
-          )}
+              </section>
+            )}
+          </main>
+        </div>
 
-          {!isPreset && resultBlock}
-        </main>
+        <footer className="footer">
+          {DEMO_DISCLAIMER} It can’t detect every scam or guarantee protection from losses.
+        </footer>
       </div>
-      <footer className="footer">
-        {DEMO_DISCLAIMER} It can’t detect every scam or guarantee protection from losses.
-      </footer>
     </div>
   )
 }
 
 const STAGE_TEXT = ['Decoding the data…', 'Reviewing risks…', 'Running the final safety check…']
+const VERDICT_SHORT: Record<Verdict, string> = { ALLOW: 'Allow', WARN: 'Review', BLOCK: 'Block' }
 
-function ResultCard({ tx, result, stage }: { tx: ProposedTransaction; result: AnalysisResult; stage: number }) {
-  const { plain, decision } = result
+function VerdictPill({ verdict }: { verdict: Verdict }) {
+  return (
+    <span className={`pill pill-${verdict.toLowerCase()}`}>
+      <span aria-hidden="true">{VERDICT_ICON[verdict]}</span> {VERDICT_SHORT[verdict]}
+    </span>
+  )
+}
+
+function previewRows(d: DecodedTransaction) {
+  const token = d.token?.symbol ?? 'Unrecognized token'
+  const amount = d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display ?? '—'
+  const unknownAmount = "Can't be determined"
+  switch (d.kind) {
+    case 'read':
+      return { asset: `${token} · Balance check (read-only)`, amount: 'None', role: 'Receives' }
+    case 'transfer':
+      return { asset: `${token} · Token transfer`, amount, role: 'Recipient' }
+    case 'approve':
+      return { asset: `${token} · ${d.isUnlimited ? 'Unlimited spending permission' : 'Spending permission'}`, amount, role: 'Spender' }
+    case 'permit':
+      return { asset: `${token} · ${d.isUnlimited ? 'Unlimited' : 'Limited'} permission by signature`, amount, role: 'Spender' }
+    case 'native-transfer':
+      return { asset: 'ETH · Transfer', amount: d.amount !== undefined ? `${formatUnits(d.amount, 18)} ETH` : '—', role: 'Recipient' }
+    case 'unsupported-typed-data':
+      return { asset: 'Unknown signature request', amount: unknownAmount, role: 'Spender' }
+    default:
+      return { asset: 'Unknown call', amount: unknownAmount, role: 'Recipient' }
+  }
+}
+
+function AddressField({ address }: { address: string }) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(address)
+      setStatus('copied')
+    } catch {
+      setStatus('failed')
+    }
+    setTimeout(() => setStatus('idle'), 1500)
+  }
+  return (
+    <div className="addr-field">
+      <code>{address}</code>
+      <button type="button" className="copy-btn" onClick={copy} aria-label={`Copy address ${address}`}>
+        {status === 'copied' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy'}
+      </button>
+    </div>
+  )
+}
+
+function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void }) {
+  const { plain, decision, decoded } = result
   const done = stage >= 3
   const v = decision.verdict.toLowerCase()
   const signature = tx.method === SIGN_METHOD
+  const rows = previewRows(decoded)
   return (
-    <section className={`card result ${done ? `edge-${v}` : ''}`} aria-live="polite">
+    <section className="preview result" aria-live="polite">
+      <div className="preview-top">
+        <p className="preview-label">Transaction preview</p>
+        <span className="tag">{signature ? 'Signature request' : 'Simulated'}</span>
+      </div>
+
       {done ? (
         <div className={`verdict verdict-${v}`}>
           <span className="verdict-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
@@ -342,7 +390,7 @@ function ResultCard({ tx, result, stage }: { tx: ProposedTransaction; result: An
             <h2 className="verdict-label">
               {plain.verdictLabel} <span className="verdict-code">{decision.verdict}</span>
             </h2>
-            <p className="verdict-headline">{decision.headline}</p>
+            <p className="verdict-headline">{plain.asksFor.title}</p>
           </div>
         </div>
       ) : (
@@ -354,53 +402,58 @@ function ResultCard({ tx, result, stage }: { tx: ProposedTransaction; result: An
           </div>
         </div>
       )}
+
       {done && (
         <>
-          <div className="result-sections">
-            <section className="result-section">
-              <h3>{signature ? 'What this signature allows' : 'What this transaction allows'}</h3>
-              <p className="lead">{plain.asksFor.title}</p>
-              <p>{plain.asksFor.text}</p>
-            </section>
-            <section className="result-section">
-              <h3>{plain.recipient.role}</h3>
-              <p className="lead">{capitalize(plain.recipient.label)}</p>
-              {plain.recipient.address && <code className="full-addr">{plain.recipient.address}</code>}
-              <p className="secondary">{plain.recipient.note}</p>
-            </section>
-            <section className="result-section">
-              <h3>{plain.reasonsTitle}</h3>
-              <ul className="plain-list">
-                {plain.reasons.map((r) => <li key={r}>{r}</li>)}
-              </ul>
-              {plain.alsoNote.length > 0 && (
-                <>
-                  <p className="also-label">Also worth knowing</p>
-                  <ul className="plain-list secondary">
-                    {plain.alsoNote.map((r) => <li key={r}>{r}</li>)}
-                  </ul>
-                </>
-              )}
-            </section>
-            <section className="result-section">
-              <h3>What to do</h3>
-              <div className={`next-step next-${v}`}>
-                <span className="next-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
-                <p>{plain.nextStep}</p>
-              </div>
-            </section>
-          </div>
-          <details className="disclosure glossary">
-            <summary>New to this? Key terms</summary>
-            <dl>
-              <dt>Signing</dt><dd>Approving a transaction or message with your wallet. Once a signed transaction is confirmed, it can’t be undone.</dd>
-              <dt>Transfer</dt><dd>Sends tokens from your wallet to someone else right away.</dd>
-              <dt>Approval</dt><dd>Gives another address (the “spender”) permission to move your tokens later, without asking you again, until you revoke it.</dd>
-              <dt>Unlimited approval</dt><dd>An approval with no cap. The spender could move your entire balance of that token, including tokens you receive later.</dd>
-              <dt>Permit (EIP-2612)</dt><dd>A signed message that grants an approval without sending a transaction. No tokens move when you sign, but the spender can use it to take them later.</dd>
-              <dt>Unrecognized</dt><dd>Not in this demo’s saved contacts or known-contract lists. It isn’t proof of anything bad; it means AgentShield can’t vouch for it.</dd>
-            </dl>
-          </details>
+          <dl className="rows">
+            <div className="row">
+              <dt>{signature || decoded.kind === 'approve' ? 'Permission' : 'Asset'}</dt>
+              <dd>{rows.asset}</dd>
+            </div>
+            <div className="row">
+              <dt>Amount</dt>
+              <dd>{rows.amount}</dd>
+            </div>
+            <div className="row row-stack">
+              <dt>{rows.role}</dt>
+              <dd>
+                <span className="row-strong">{capitalize(plain.recipient.label)}</span>
+                {plain.recipient.address && <AddressField key={plain.recipient.address} address={plain.recipient.address} />}
+                <span className="row-note">{plain.recipient.note}</span>
+              </dd>
+            </div>
+          </dl>
+
+          <section className="preview-section">
+            <h3 className="section-title">{signature ? 'What signing does' : 'What this does'}</h3>
+            <p>{plain.asksFor.text}</p>
+          </section>
+
+          <section className="preview-section">
+            <h3 className="section-title">{plain.reasonsTitle}</h3>
+            <ul className="plain-list">
+              {plain.reasons.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+            {plain.alsoNote.length > 0 && (
+              <>
+                <p className="also-label">Also worth knowing</p>
+                <ul className="plain-list secondary">
+                  {plain.alsoNote.map((r) => <li key={r}>{r}</li>)}
+                </ul>
+              </>
+            )}
+          </section>
+
+          <section className="preview-section">
+            <h3 className="section-title">What to do</h3>
+            <div className={`next-step next-${v}`}>
+              <span className="next-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
+              <p>{plain.nextStep}</p>
+            </div>
+          </section>
+
+          <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={onReplay} />
+
           <p className="limits">
             {signature ? 'Token contract (verifyingContract)' : 'Contract called'}:{' '}
             <code>{tx.to === ZERO_ADDRESS && signature ? 'not provided' : tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.
@@ -412,18 +465,16 @@ function ResultCard({ tx, result, stage }: { tx: ProposedTransaction; result: An
 }
 
 function TechnicalDetails({ tx, result, stage, onReplay }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void }) {
-  const done = stage >= 3
   const { decoded, risks, decision } = result
   const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
   const triggered = decision.rules.filter((r) => r.triggered).length
   const signature = tx.method === SIGN_METHOD
   return (
-    <section className="card details-card">
-      <h2 className="card-title">Technical details</h2>
+    <div className="tech">
       <details className="disclosure">
         <summary>
           Decoded {signature ? 'typed data' : 'calldata'}
-          <span className="summary-meta">{decoded.functionSignature ? 'decoded' : 'not decoded'}</span>
+          <span className="summary-meta">{decoded.functionSignature ? 'Decoded' : 'Not decoded'}</span>
         </summary>
         <div className="disclosure-body">
           <p className="summary">{decoded.summary}</p>
@@ -455,7 +506,7 @@ function TechnicalDetails({ tx, result, stage, onReplay }: { tx: ProposedTransac
       </details>
       <details className="disclosure">
         <summary>
-          All rules<span className="summary-meta">{done ? `${triggered} of ${decision.rules.length} triggered` : 'running…'}</span>
+          All rules<span className="summary-meta">{triggered} of {decision.rules.length} triggered</span>
         </summary>
         <table className="rules disclosure-body">
           <tbody>
@@ -467,7 +518,7 @@ function TechnicalDetails({ tx, result, stage, onReplay }: { tx: ProposedTransac
                   {r.triggered && <div className="rule-reason">{r.explanation}</div>}
                 </td>
                 <td className="rule-out">
-                  {r.triggered ? <span className={`pill pill-${r.outcome.toLowerCase()}`}>{r.outcome}</span> : <span className="muted">not triggered</span>}
+                  {r.triggered ? <VerdictPill verdict={r.outcome} /> : <span className="muted">Not triggered</span>}
                 </td>
               </tr>
             ))}
@@ -476,13 +527,24 @@ function TechnicalDetails({ tx, result, stage, onReplay }: { tx: ProposedTransac
       </details>
       <details className="disclosure">
         <summary>
-          Activity trace<span className="summary-meta">Decode → Risk review → Final safety check</span>
+          Activity trace<span className="summary-meta">Decode → Review → Check</span>
         </summary>
         <div className="disclosure-body">
           <Trace result={result} stage={stage} onReplay={onReplay} />
         </div>
       </details>
-    </section>
+      <details className="disclosure">
+        <summary>New to this? Key terms</summary>
+        <dl className="glossary disclosure-body">
+          <dt>Signing</dt><dd>Approving a transaction or message with your wallet. Once a signed transaction is confirmed, it can’t be undone.</dd>
+          <dt>Transfer</dt><dd>Sends tokens from your wallet to someone else right away.</dd>
+          <dt>Approval</dt><dd>Gives another address (the “spender”) permission to move your tokens later, without asking you again, until you revoke it.</dd>
+          <dt>Unlimited approval</dt><dd>An approval with no cap. The spender could move your entire balance of that token, including tokens you receive later.</dd>
+          <dt>Permit (EIP-2612)</dt><dd>A signed message that grants an approval without sending a transaction. No tokens move when you sign, but the spender can use it to take them later.</dd>
+          <dt>Unrecognized</dt><dd>Not in this demo’s saved contacts or known-contract lists. It isn’t proof of anything bad; it means AgentShield can’t vouch for it.</dd>
+        </dl>
+      </details>
+    </div>
   )
 }
 
@@ -523,7 +585,7 @@ function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: num
           <div className="trace-body">
             <div className="trace-title">
               Outcome
-              {done && <span className={`pill pill-${decision.verdict.toLowerCase()}`}>{decision.verdict}</span>}
+              {done && <VerdictPill verdict={decision.verdict} />}
             </div>
             {done && <div className="trace-detail">Verdict only. No signature requested, nothing broadcast.</div>}
           </div>
