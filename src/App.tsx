@@ -9,6 +9,7 @@ import type { PermitParseResult } from './engine/permit'
 import { analyze } from './engine/pipeline'
 import type { AnalysisResult, DecodedTransaction, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
 import ethLogo from './assets/eth-logo.png'
+import usdcLogo from './assets/usdc-logo.png'
 import './App.css'
 
 const STEP_MS = 650
@@ -318,6 +319,13 @@ function TokenBadge({ symbol }: { symbol?: string }) {
     return (
       <span className="token-badge eth" aria-hidden="true">
         <img src={ethLogo} alt="" />
+      </span>
+    )
+  }
+  if (symbol === 'USDC') {
+    return (
+      <span className="token-badge logo" aria-hidden="true">
+        <img src={usdcLogo} alt="" />
       </span>
     )
   }
