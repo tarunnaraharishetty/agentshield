@@ -96,6 +96,7 @@ export default function App() {
     const parsed = parseCustomInput(toInput, dataInput)
     if (!parsed.ok) {
       setErrors(parsed.errors)
+      setCustomTx(null)
       return
     }
     setErrors({})
@@ -106,6 +107,7 @@ export default function App() {
     const parsed = parsePermitInput(permitInput)
     if (!parsed.ok) {
       setPermitError(parsed.error)
+      setPermit(null)
       return
     }
     setPermitError(null)
