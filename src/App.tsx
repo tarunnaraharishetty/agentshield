@@ -356,7 +356,11 @@ function Identicon({ address }: { address: string }) {
 
 function buildRows(tx: ProposedTransaction, d: DecodedTransaction, plain: AnalysisResult['plain']): Row[] {
   const tokenName = d.token ? d.token.name : 'Unrecognized token'
-  const tokenSub = d.token ? d.token.symbol : `Contract ${shortAddr(tx.to)}`
+  const tokenSub = d.token
+    ? d.token.symbol === 'USDC'
+      ? 'USDC · Designed to track $1 USD; market price can vary. No live price shown.'
+      : d.token.symbol
+    : `Contract ${shortAddr(tx.to)}`
   const amount = d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display
   const asset: Row = { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Asset', value: tokenName, sub: tokenSub }
   const who: Row = {
@@ -390,7 +394,9 @@ function buildRows(tx: ProposedTransaction, d: DecodedTransaction, plain: Analys
       const how = d.kind === 'permit' ? 'Granted by signature; no tokens move when you sign.' : 'No tokens move when you approve.'
       return [
         asset,
-        { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: d.isUnlimited ? 'No spending cap' : 'Spending cap' },
+        d.isUnlimited
+          ? { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: 'Unlimited — no spending cap' }
+          : { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: 'Spending cap' },
         who,
         perm(
           d.isUnlimited ? `Unlimited ${d.token?.symbol ?? 'token'} spending` : `Spend up to ${amount}`,
