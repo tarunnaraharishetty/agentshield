@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { encodeAddress, encodeCall, encodeUint, formatUnits, MAX_UINT256, SELECTORS, shortAddr } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
 import { SIMULATED_CHAIN_ID } from './engine/context'
@@ -7,7 +7,7 @@ import { DEMO_DISCLAIMER } from './engine/explain'
 import { buildPermitTypedData, parsePermitInput, ZERO_ADDRESS } from './engine/permit'
 import type { PermitParseResult } from './engine/permit'
 import { analyze } from './engine/pipeline'
-import type { AnalysisResult, DecodedTransaction, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
+import type { AnalysisResult, DecodedTransaction, Hex, ProposedTransaction, RuleResult, Severity, Verdict } from './engine/types'
 import ethLogo from './assets/eth-logo.png'
 import usdcLogo from './assets/usdc-logo.png'
 import './App.css'
@@ -234,6 +234,10 @@ export default function App() {
     { id: CUSTOM, title: 'Paste a transaction', verdict: customVerdict },
     { id: PERMIT, title: 'Paste a permit', verdict: permitVerdict },
   ]
+  const pickItems: PickItem[] = [
+    ...SIMULATED_CASES.map((c) => ({ id: c.id, title: c.title, sub: c.subtitle, verdict: verdictByCase[c.id] as Verdict })),
+    ...ownRows.map((r) => ({ id: r.id, title: r.title, sub: r.id === CUSTOM ? 'to · data' : 'EIP-712 typed data', verdict: r.verdict })),
+  ]
   const signature = mode === PERMIT || tx?.method === SIGN_METHOD
   const chainId = tx?.chainId ?? SIMULATED_CHAIN_ID
 
@@ -248,6 +252,8 @@ export default function App() {
               <p className="tagline">Understand what you’re approving before you sign.</p>
             </div>
           </div>
+
+          <SamplePicker items={pickItems} value={mode} onSelect={select} />
 
           <h2 className="side-label">Simulated cases</h2>
           <div className="case-list">
@@ -383,11 +389,11 @@ function buildRows(tx: ProposedTransaction, d: DecodedTransaction, plain: Analys
     case 'read':
       return [asset, { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: 'None', sub: 'Read-only check. Nothing moves.' }, who, perm('None', 'Read-only. Nothing is approved or sent.')]
     case 'transfer':
-      return [asset, { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: 'One-time transfer' }, who, perm('None', 'One-time transfer. Nothing can be taken later.')]
+      return [asset, { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: rollable(amount ?? unknown), sub: 'One-time transfer' }, who, perm('None', 'One-time transfer. Nothing can be taken later.')]
     case 'native-transfer':
       return [
         { icon: <TokenBadge symbol="ETH" />, label: 'Asset', value: 'Ether', sub: 'ETH' },
-        { icon: <TokenBadge symbol="ETH" />, label: 'Amount', value: d.amount !== undefined ? `${formatUnits(d.amount, 18)} ETH` : unknown, sub: 'One-time transfer' },
+        { icon: <TokenBadge symbol="ETH" />, label: 'Amount', value: rollable(d.amount !== undefined ? `${formatUnits(d.amount, 18)} ETH` : unknown), sub: 'One-time transfer' },
         who,
         perm('None', 'One-time transfer. Nothing can be taken later.'),
       ]
@@ -398,7 +404,7 @@ function buildRows(tx: ProposedTransaction, d: DecodedTransaction, plain: Analys
         asset,
         d.isUnlimited
           ? { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: 'Unlimited — no spending cap' }
-          : { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: 'Spending cap' },
+          : { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: rollable(amount ?? unknown), sub: 'Spending cap' },
         who,
         perm(
           d.isUnlimited ? `Unlimited ${d.token?.symbol ?? 'token'} spending` : `Spend up to ${amount}`,
@@ -499,6 +505,8 @@ function ReviewContent({
         </div>
       </div>
 
+      <RiskMeter rules={decision.rules} />
+
       <dl className="rows">
         {buildRows(tx, decoded, plain).map((r) => (
           <div className="row" key={r.label}>
@@ -562,81 +570,98 @@ function ReviewContent({
   )
 }
 
+const TABS = ['Decoded', 'Risks', 'Rules', 'Trace'] as const
+
 function TechnicalDetails({ tx, result, stage, onReplay, raw }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void; raw?: string }) {
+  const [tab, setTab] = useState(0)
   const { decoded, risks, decision } = result
   const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
   const triggered = decision.rules.filter((r) => r.triggered).length
   const signature = tx.method === SIGN_METHOD
+  const onKey = (e: React.KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const delta = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!delta) return
+    const next = (i + delta + TABS.length) % TABS.length
+    setTab(next)
+    ;(e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next])?.focus()
+  }
+  const meta = [decoded.functionSignature ? 'decoded' : 'not decoded', `${risks.length}`, `${triggered}/${decision.rules.length}`, '3 steps']
   return (
     <div className="tech-body">
-      {raw && (
-        <details className="disclosure">
-          <summary>Raw proposed transaction</summary>
-          <pre className="raw-pre">{raw}</pre>
-        </details>
-      )}
-      <details className="disclosure">
-        <summary>
-          Decoded {signature ? 'typed data' : 'calldata'}
-          <span className="summary-meta">{decoded.functionSignature ? 'Decoded' : 'Not decoded'}</span>
-        </summary>
-        <div className="disclosure-body">
-          <p className="summary">{decoded.summary}</p>
-          <dl className="fields">
-            <dt>Contract</dt><dd>{decoded.contractLabel} <code>{tx.to}</code></dd>
-            <dt>{signature ? 'Typed data' : 'Function'}</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
-            {decoded.args.map((a) => (
-              <FieldRow key={a.name} name={a.name} value={a.display} />
+      <div className="tabs" role="tablist" aria-label="Technical details" style={{ '--n': TABS.length, '--i': tab } as React.CSSProperties}>
+        <span className="tab-glider" aria-hidden="true" />
+        {TABS.map((t, i) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            id={`tab-${t}`}
+            aria-selected={tab === i}
+            aria-controls={`panel-${t}`}
+            tabIndex={tab === i ? 0 : -1}
+            className={`tab ${tab === i ? 'active' : ''}`}
+            onClick={() => setTab(i)}
+            onKeyDown={(e) => onKey(e, i)}
+          >
+            {t}
+            <span className="tab-meta">{meta[i]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="tab-panel" role="tabpanel" id={`panel-${TABS[tab]}`} aria-labelledby={`tab-${TABS[tab]}`} key={tab}>
+        {tab === 0 && (
+          <>
+            <p className="summary">{decoded.summary}</p>
+            <dl className="fields">
+              <dt>Contract</dt><dd>{decoded.contractLabel} <code>{tx.to}</code></dd>
+              <dt>{signature ? 'Typed data' : 'Function'}</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
+              {decoded.args.map((a) => (
+                <FieldRow key={a.name} name={a.name} value={a.display} />
+              ))}
+            </dl>
+            <p className="raw-label">{signature ? 'Request' : 'Calldata'}</p>
+            <pre className="raw-pre">{signature ? 'eth_signTypedData_v4 (simulated)' : tx.data}</pre>
+            {raw && (
+              <>
+                <p className="raw-label">Raw proposed transaction</p>
+                <pre className="raw-pre">{raw}</pre>
+              </>
+            )}
+          </>
+        )}
+        {tab === 1 && (
+          <ul className="risks">
+            {sortedRisks.map((r) => (
+              <li key={r.id} className={`risk sev-${r.severity}`}>
+                <span className="sev">{r.severity}</span>
+                <div>
+                  <div className="risk-title">{r.title}</div>
+                  <div className="risk-detail">{r.detail}</div>
+                </div>
+              </li>
             ))}
-          </dl>
-          <pre className="raw-pre">{signature ? 'eth_signTypedData_v4 (simulated)' : tx.data}</pre>
-        </div>
-      </details>
-      <details className="disclosure">
-        <summary>
-          Risk factors<span className="summary-meta">{risks.length} found</span>
-        </summary>
-        <ul className="risks disclosure-body">
-          {sortedRisks.map((r) => (
-            <li key={r.id} className={`risk sev-${r.severity}`}>
-              <span className="sev">{r.severity}</span>
-              <div>
-                <div className="risk-title">{r.title}</div>
-                <div className="risk-detail">{r.detail}</div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </details>
-      <details className="disclosure">
-        <summary>
-          All rules<span className="summary-meta">{triggered} of {decision.rules.length} triggered</span>
-        </summary>
-        <table className="rules disclosure-body">
-          <tbody>
-            {decision.rules.map((r) => (
-              <tr key={r.id} className={r.triggered ? 'triggered' : ''}>
-                <td className="rule-id">{r.id}</td>
-                <td>
-                  <div className="rule-name">{r.name}</div>
-                  {r.triggered && <div className="rule-reason">{r.explanation}</div>}
-                </td>
-                <td className="rule-out">
-                  {r.triggered ? <VerdictTag verdict={r.outcome} /> : <span className="hint">Not triggered</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </details>
-      <details className="disclosure">
-        <summary>
-          Activity trace<span className="summary-meta">Decode → Review → Check</span>
-        </summary>
-        <div className="disclosure-body">
-          <Trace result={result} stage={stage} onReplay={onReplay} />
-        </div>
-      </details>
+          </ul>
+        )}
+        {tab === 2 && (
+          <table className="rules">
+            <tbody>
+              {decision.rules.map((r) => (
+                <tr key={r.id} className={r.triggered ? 'triggered' : ''}>
+                  <td className="rule-id">{r.id}</td>
+                  <td>
+                    <div className="rule-name">{r.name}</div>
+                    {r.triggered && <div className="rule-reason">{r.explanation}</div>}
+                  </td>
+                  <td className="rule-out">
+                    {r.triggered ? <VerdictTag verdict={r.outcome} /> : <span className="hint">Not triggered</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {tab === 3 && <Trace result={result} stage={stage} onReplay={onReplay} />}
+      </div>
       <details className="disclosure">
         <summary>New to this? Key terms</summary>
         <dl className="glossary disclosure-body">
@@ -648,6 +673,128 @@ function TechnicalDetails({ tx, result, stage, onReplay, raw }: { tx: ProposedTr
           <dt>Unrecognized</dt><dd>Not in this demo’s saved contacts or known-contract lists. It isn’t proof of anything bad; it means AgentShield can’t vouch for it.</dd>
         </dl>
       </details>
+    </div>
+  )
+}
+
+const rollable = (t: string): React.ReactNode => (/\d/.test(t) ? <RollingText key={t} text={t} /> : t)
+
+// Digits roll up from 0 to their value on mount; the plain text stays available to screen readers.
+function RollingText({ text }: { text: string }) {
+  return (
+    <span className="roll">
+      <span className="sr-only">{text}</span>
+      <span aria-hidden="true">
+        {[...text].map((ch, i) =>
+          /\d/.test(ch) ? (
+            <span key={i} className="roll-col">
+              <span className="roll-strip" style={{ transform: `translateY(${-Number(ch) * 10}%)`, animationDelay: `${i * 35}ms` }}>
+                {'0123456789'.split('').map((d) => <span key={d}>{d}</span>)}
+              </span>
+            </span>
+          ) : (
+            <span key={i}>{ch}</span>
+          ),
+        )}
+      </span>
+    </span>
+  )
+}
+
+function RiskMeter({ rules }: { rules: RuleResult[] }) {
+  const lit = (r: RuleResult) => (!r.triggered ? 0 : r.outcome === 'BLOCK' ? 4 : r.outcome === 'WARN' ? 3 : 2)
+  const count = (v: Verdict) => rules.filter((r) => r.triggered && r.outcome === v).length
+  const triggered = rules.filter((r) => r.triggered).length
+  return (
+    <div className="meter" role="img" aria-label={`Safety rules: ${triggered} of ${rules.length} triggered. Block ${count('BLOCK')}, review ${count('WARN')}, allow ${count('ALLOW')}.`}>
+      <div className="meter-head">
+        <span className="meter-title">Safety rules</span>
+        <span className="hint">{triggered} of {rules.length} triggered</span>
+      </div>
+      <div className="meter-bars" aria-hidden="true">
+        {rules.map((r, i) => (
+          <span key={r.id} className={`meter-bar ${r.triggered ? `on-${r.outcome.toLowerCase()}` : ''}`} title={`${r.id} ${r.name}: ${r.triggered ? VERDICT_SHORT[r.outcome] : 'not triggered'}`}>
+            {[0, 1, 2, 3].map((k) => (
+              <span key={k} className={`seg ${k < lit(r) ? 'lit' : ''}`} style={{ animationDelay: `${i * 30 + k * 40}ms` }} />
+            ))}
+          </span>
+        ))}
+      </div>
+      <div className="meter-legend" aria-hidden="true">
+        <span><i className="sw sw-block" />Blocked {count('BLOCK')}</span>
+        <span><i className="sw sw-warn" />Review {count('WARN')}</span>
+        <span><i className="sw sw-allow" />Allowed {count('ALLOW')}</span>
+        <span><i className="sw" />Not triggered</span>
+      </div>
+    </div>
+  )
+}
+
+interface PickItem {
+  id: string
+  title: string
+  sub: string
+  verdict: Verdict | null
+}
+
+function SamplePicker({ items, value, onSelect }: { items: PickItem[]; value: string; onSelect: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [open])
+  const current = items.find((i) => i.id === value) ?? items[0]
+  const choose = (id: string) => {
+    onSelect(id)
+    setOpen(false)
+  }
+  return (
+    <div className="picker" ref={ref}>
+      <button type="button" className="picker-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <span className={`dot ${current.verdict ? `dot-${current.verdict.toLowerCase()}` : 'dot-none'}`} aria-hidden="true" />
+        <span className="picker-label">{current.title}</span>
+        {current.verdict && <VerdictTag verdict={current.verdict} />}
+        <span className={`chev ${open ? 'up' : ''}`} aria-hidden="true">⌄</span>
+      </button>
+      {open && (
+        <ul className="picker-list" role="listbox" aria-label="Choose a sample">
+          {items.map((i) => (
+            <li
+              key={i.id}
+              role="option"
+              aria-selected={i.id === value}
+              tabIndex={0}
+              className={`picker-option ${i.id === value ? 'active' : ''}`}
+              onClick={() => choose(i.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  choose(i.id)
+                }
+              }}
+            >
+              <span className={`dot ${i.verdict ? `dot-${i.verdict.toLowerCase()}` : 'dot-none'}`} aria-hidden="true" />
+              <span className="case-text">
+                <span className="case-title">{i.title}</span>
+                <span className="case-sub">{i.sub}</span>
+              </span>
+              {i.verdict && <VerdictTag verdict={i.verdict} />}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
