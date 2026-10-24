@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SIMULATED_CASES } from './cases'
+import { ALICE_LOOKALIKE, SIMULATED_CASES } from './cases'
 import { analyze } from './pipeline'
 import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS } from './abi'
 import { parseCustomInput } from './custom'
@@ -219,7 +219,6 @@ describe('plain-language explanation for beginners', () => {
 describe('lookalike of a saved address', () => {
   const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
   const ALICE_ADDR = '0xa0f5034c04fd9ed0ec40b1a64ddb86076d885ab8'
-  const ALICE_LOOKALIKE = '0xa0f503' + '1'.repeat(30) + '5ab8'
   const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
   const PERMIT2_LOOKALIKE = '0x000000' + 'f'.repeat(30) + '8ba3'
   const UNRELATED = '0x' + 'deadbeef'.repeat(5)
@@ -277,9 +276,26 @@ describe('lookalike of a saved address', () => {
     expect(r12(r).triggered).toBe(false)
   })
 
-  it('leaves the built-in presets unchanged', () => {
-    expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
-    for (const c of SIMULATED_CASES) expect(r12(analyze(c.tx)).triggered).toBe(false)
+  it('leaves the original presets unchanged', () => {
+    const original = SIMULATED_CASES.slice(0, 3)
+    expect(original.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
+    for (const c of original) expect(r12(analyze(c.tx)).triggered).toBe(false)
+  })
+
+  it('lookalike recipient sample is blocked by the existing lookalike rule', () => {
+    const r = byId('lookalike-recipient')
+    expect(r.decoded.kind).toBe('transfer')
+    expect(r.decoded.counterparty).toBe(ALICE_LOOKALIKE)
+    expect(r.decoded.args.find((a) => a.name === 'amount')?.display).toBe('10 USDC')
+    expect(r.decision.verdict).toBe('BLOCK')
+    expect(r12(r).triggered).toBe(true)
+    expect(r.decision.rules.filter((x) => x.triggered && x.outcome === 'BLOCK').map((x) => x.id)).toEqual(['R12'])
+    const why = r.plain.reasons.join(' ')
+    expect(why).toContain(ALICE_LOOKALIKE)
+    expect(why).toContain(ALICE_ADDR)
+    expect(why).toContain('full addresses are different')
+    expect(r.plain.recipient.note).toMatch(/Copy the address from your saved contact/)
+    expect(r.plain.nextStep).toMatch(/Copy the address from your saved contact/)
   })
 })
 
@@ -380,6 +396,6 @@ describe('EIP-2612 permit input', () => {
       const text = JSON.stringify(analyzeTyped(t), (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
       expect(text).not.toMatch(/scam|signature is valid|verified signature/i)
     }
-    expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
+    expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK', 'BLOCK'])
   })
 })
