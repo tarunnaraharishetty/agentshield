@@ -159,3 +159,44 @@ describe('pasted transaction input', () => {
     expect(r.ok && r.tx.method).toBe('eth_call')
   })
 })
+
+describe('plain-language explanation for beginners', () => {
+  const all = () => SIMULATED_CASES.map((c) => analyze(c.tx))
+  const text = (r: ReturnType<typeof analyze>) => JSON.stringify(r, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
+
+  it('read-only: asks for nothing and sends to no one', () => {
+    const { plain } = byId('balance-check')
+    expect(plain.asksFor.title).toMatch(/read-only/)
+    expect(plain.recipient.label).toBe('No one')
+    expect(plain.reasons[0]).toContain('only reads data')
+  })
+
+  it('transfer: names the amount and the recipient with full address', () => {
+    const r = byId('small-transfer')
+    expect(r.plain.asksFor.text).toContain('25 USDC')
+    expect(r.plain.recipient.label).toContain('Alice')
+    expect(r.plain.recipient.address).toBe(r.decoded.counterparty)
+    expect(r.plain.reasons.join(' ')).toContain('moves 25 USDC')
+    expect(r.plain.verdictLabel).toBe('Review before signing')
+  })
+
+  it('unlimited approval: explains the permission, the spender, and the specific block reason', () => {
+    const r = byId('unlimited-approval')
+    expect(r.plain.asksFor.title).toContain('unlimited spending permission')
+    expect(r.plain.recipient.role).toContain('spender')
+    expect(r.plain.recipient.address).toBe(r.decoded.counterparty)
+    expect(r.plain.reasons).toHaveLength(1)
+    expect(r.plain.reasons[0]).toContain("can't verify who controls")
+    expect(r.plain.reasons[0]).toContain('take all of your USDC')
+    expect(r.plain.alsoNote.length).toBeGreaterThan(0)
+    expect(r.plain.nextStep).toMatch(/^Don't sign this/)
+  })
+
+  it('gives every triggered rule a specific explanation', () => {
+    for (const r of all()) for (const rule of r.decision.rules.filter((x) => x.triggered)) expect(rule.explanation.length).toBeGreaterThan(20)
+  })
+
+  it('never overclaims protection or labels anything a scam', () => {
+    for (const r of all()) expect(text(r)).not.toMatch(/safe to proceed|you are protected|guaranteed|scam/i)
+  })
+})

@@ -77,7 +77,8 @@ export default function App() {
           <ShieldIcon />
           <div>
             <h1>AgentShield</h1>
-            <p>Safety firewall for AI-proposed Ethereum transactions</p>
+            <p className="tagline">Understand what you’re approving before you sign.</p>
+            <p className="subtag">Plain-language checks for AI-proposed Ethereum transactions</p>
           </div>
         </div>
         <div className="topbar-badges">
@@ -188,7 +189,10 @@ export default function App() {
           )}
 
           {tx && result ? (
-            <Analysis tx={tx} result={result} stage={stage} />
+            <>
+              <BeforeYouSign tx={tx} result={result} done={stage >= 3} />
+              <Analysis tx={tx} result={result} stage={stage} />
+            </>
           ) : (
             <section className="card empty">Enter a <code>to</code> address and <code>data</code>, then press Analyze.</section>
           )}
@@ -205,13 +209,17 @@ export default function App() {
           )}
         </aside>
       </div>
+      <footer className="footer">
+        Simulated demo. AgentShield applies a fixed set of deterministic rules to explain transactions. It can’t detect every scam or
+        guarantee protection from losses, and it never connects to a wallet, signs, or sends anything.
+      </footer>
     </div>
   )
 }
 
 function Analysis({ tx, result, stage }: { tx: ProposedTransaction; result: AnalysisResult; stage: number }) {
   const done = stage >= 3
-  const { decoded, risks, decision } = result
+  const { decoded, risks, decision, plain } = result
   const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
   return (
     <>
@@ -258,7 +266,7 @@ function Analysis({ tx, result, stage }: { tx: ProposedTransaction; result: Anal
         <div className={`verdict verdict-${decision.verdict.toLowerCase()}`}>
           <span className="verdict-icon">{VERDICT_ICON[decision.verdict]}</span>
           <div>
-            <div className="verdict-label">{decision.verdict}</div>
+            <div className="verdict-label">{decision.verdict} <span className="verdict-sub">· {plain.verdictLabel}</span></div>
             <div className="verdict-headline">{decision.headline}</div>
           </div>
         </div>
@@ -269,7 +277,7 @@ function Analysis({ tx, result, stage }: { tx: ProposedTransaction; result: Anal
                 <td className="rule-id">{r.id}</td>
                 <td>
                   <div className="rule-name">{r.name}</div>
-                  {r.triggered && <div className="rule-reason">{r.reason}</div>}
+                  {r.triggered && <div className="rule-reason">{r.explanation}</div>}
                 </td>
                 <td className="rule-out">
                   {r.triggered ? <span className={`pill pill-${r.outcome.toLowerCase()}`}>{r.outcome}</span> : <span className="muted">not triggered</span>}
@@ -329,6 +337,59 @@ function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: num
     </>
   )
 }
+
+function BeforeYouSign({ tx, result, done }: { tx: ProposedTransaction; result: AnalysisResult; done: boolean }) {
+  const { plain, decision } = result
+  const v = decision.verdict.toLowerCase()
+  return (
+    <section className={`card before-sign reveal ${done ? 'shown' : ''} ${done ? `edge-${v}` : ''}`}>
+      <div className="card-head">
+        <h2>What you’re being asked to approve</h2>
+        {done ? <span className={`pill pill-${v}`}>{decision.verdict} · {plain.verdictLabel}</span> : <span className="muted">Analyzing…</span>}
+      </div>
+      <div className="plain-grid">
+        <div className="plain-q">What it asks for</div>
+        <div>
+          <div className="plain-strong">{plain.asksFor.title}</div>
+          <div className="plain-text">{plain.asksFor.text}</div>
+        </div>
+        <div className="plain-q">{plain.recipient.role}</div>
+        <div>
+          <div className="plain-strong">{capitalize(plain.recipient.label)}</div>
+          {plain.recipient.address && <code className="full-addr">{plain.recipient.address}</code>}
+          <div className="plain-text">{plain.recipient.note}</div>
+        </div>
+        <div className="plain-q">{plain.reasonsTitle}</div>
+        <ul className="plain-list">
+          {plain.reasons.map((r) => <li key={r}>{r}</li>)}
+        </ul>
+        {plain.alsoNote.length > 0 && (
+          <>
+            <div className="plain-q">Also worth knowing</div>
+            <ul className="plain-list muted-list">
+              {plain.alsoNote.map((r) => <li key={r}>{r}</li>)}
+            </ul>
+          </>
+        )}
+        <div className="plain-q">What to do</div>
+        <div className={`next-step next-${v}`}>{plain.nextStep}</div>
+      </div>
+      <details className="glossary">
+        <summary>New to this? Key terms</summary>
+        <dl>
+          <dt>Signing</dt><dd>Approving a transaction with your wallet. Once a signed transaction is confirmed, it can’t be undone.</dd>
+          <dt>Transfer</dt><dd>Sends tokens from your wallet to someone else right away.</dd>
+          <dt>Approval</dt><dd>Gives another address (the “spender”) permission to move your tokens later, without asking you again, until you revoke it.</dd>
+          <dt>Unlimited approval</dt><dd>An approval with no cap. The spender could move your entire balance of that token, including tokens you receive later.</dd>
+          <dt>Unrecognized</dt><dd>Not in this demo’s saved contacts or known-contract lists. It isn’t proof of anything bad; it means AgentShield can’t vouch for it.</dd>
+        </dl>
+      </details>
+      <p className="limits">Contract called: <code>{tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.</p>
+    </section>
+  )
+}
+
+const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
 function FieldRow({ name, value }: { name: string; value: string }) {
   return (

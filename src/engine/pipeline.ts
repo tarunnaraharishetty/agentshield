@@ -1,4 +1,5 @@
 import { decodeTransaction } from './decoder'
+import { explainPlainly } from './explain'
 import { evaluatePolicy } from './policy'
 import { assessRisks } from './risk'
 import type { AnalysisResult, ProposedTransaction } from './types'
@@ -6,10 +7,11 @@ import type { AnalysisResult, ProposedTransaction } from './types'
 export function analyze(tx: ProposedTransaction): AnalysisResult {
   const decoded = decodeTransaction(tx)
   const risks = assessRisks(tx, decoded)
-  const decision = evaluatePolicy(decoded, risks)
+  const decision = evaluatePolicy(tx, decoded, risks)
   const triggered = decision.rules.filter((r) => r.triggered)
 
   return {
+    plain: explainPlainly(tx, decoded, decision),
     decoded,
     risks,
     decision,

@@ -64,6 +64,7 @@ export interface RuleResult {
   triggered: boolean
   outcome: Verdict
   reason: string
+  explanation: string
 }
 
 export interface SafetyDecision {
@@ -79,7 +80,18 @@ export interface TraceStep {
   items: string[]
 }
 
+export interface PlainExplanation {
+  verdictLabel: string
+  asksFor: { title: string; text: string }
+  recipient: { role: string; label: string; address: string | null; note: string }
+  reasonsTitle: string
+  reasons: string[]
+  alsoNote: string[]
+  nextStep: string
+}
+
 export interface AnalysisResult {
+  plain: PlainExplanation
   decoded: DecodedTransaction
   risks: RiskFactor[]
   decision: SafetyDecision

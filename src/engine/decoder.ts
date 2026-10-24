@@ -124,6 +124,6 @@ function unknown(tx: ProposedTransaction, contractLabel: string, writesState: bo
 function summarizeUnknown(contractLabel: string, selector: string | null): string {
   if (!selector) return `The calldata is too short to contain a function selector, so its effect on ${contractLabel} cannot be explained.`
   const known = KNOWN_FUNCTIONS[selector]
-  if (known) return `The data starts with the ${known} selector, but its arguments are malformed, so it cannot be explained safely.`
+  if (known) return `The data starts with the ${known} selector, but its arguments are malformed, so it cannot be explained reliably.`
   return `Call an unrecognized function (${selector}) on ${contractLabel}. Its effect cannot be explained.`
 }

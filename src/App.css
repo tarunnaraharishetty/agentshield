@@ -139,3 +139,32 @@
 .primary:hover { filter: brightness(1.1); }
 .form-note { font-size: 12px; color: var(--muted); }
 .form-note code { color: #b9c4dc; }
+
+.brand .tagline { color: var(--text); font-size: 15px; font-weight: 600; }
+.brand .subtag { color: var(--muted); font-size: 12px; }
+.footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 28px 28px; max-width: 900px; margin: 0 auto; }
+
+.before-sign { border-width: 1px; }
+.before-sign.edge-allow { border-color: rgba(60,207,145,.45); }
+.before-sign.edge-warn { border-color: rgba(245,184,74,.45); }
+.before-sign.edge-block { border-color: rgba(255,93,108,.5); }
+.plain-grid { display: grid; grid-template-columns: 190px 1fr; gap: 14px 18px; font-size: 14px; }
+@media (max-width: 760px) { .plain-grid { grid-template-columns: 1fr; gap: 4px; } .plain-grid > .plain-q:not(:first-child) { margin-top: 10px; } }
+.plain-q { color: var(--muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; padding-top: 2px; }
+.plain-strong { font-weight: 600; font-size: 15px; }
+.plain-text { color: #c3cce0; }
+.full-addr { display: inline-block; margin: 4px 0; padding: 3px 8px; background: #0d1320; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: #d7def0; word-break: break-all; }
+.plain-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.muted-list { color: #aab5cc; }
+.next-step { padding: 10px 12px; border-radius: 10px; font-weight: 500; }
+.next-allow { background: rgba(60,207,145,.1); color: #bff0da; }
+.next-warn { background: rgba(245,184,74,.1); color: #ffe2a8; }
+.next-block { background: rgba(255,93,108,.1); color: #ffc4ca; }
+.glossary { margin-top: 16px; font-size: 13px; }
+.glossary summary { cursor: pointer; color: var(--accent); }
+.glossary dl { display: grid; grid-template-columns: 140px 1fr; gap: 6px 14px; margin: 10px 0 0; }
+.glossary dt { font-weight: 600; }
+.glossary dd { margin: 0; color: #c3cce0; }
+.limits { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.limits code { color: #b9c4dc; word-break: break-all; }
+.verdict-sub { font-size: 15px; font-weight: 600; letter-spacing: 0; opacity: .85; }
