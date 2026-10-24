@@ -14,12 +14,12 @@ interface Rule {
 export const RULES: Rule[] = [
   { id: 'R1', name: 'Allowed network', outcome: 'BLOCK', test: (_d, has) => has('wrong-chain'), reason: 'Transaction targets a network outside the allow list.' },
   { id: 'R2', name: 'Explainable call', outcome: 'BLOCK', test: (_d, has) => has('unknown-function'), reason: 'Calls that cannot be decoded are never allowed.' },
-  { id: 'R3', name: 'No unlimited approvals to unfamiliar spenders', outcome: 'BLOCK', test: (_d, has) => has('unlimited-approval') && has('unfamiliar-spender'), reason: 'Unlimited allowance to an unknown address is a common drainer pattern.' },
+  { id: 'R3', name: 'No unlimited approvals to unrecognized spenders', outcome: 'BLOCK', test: (_d, has) => has('unlimited-approval') && has('unrecognized-spender'), reason: 'An unlimited allowance to an address that cannot be verified puts the whole balance at risk.' },
   { id: 'R4', name: 'Unlimited approvals need review', outcome: 'WARN', test: (_d, has) => has('unlimited-approval'), reason: 'Even trusted spenders should get a bounded allowance where possible.' },
-  { id: 'R5', name: 'Unfamiliar spender', outcome: 'WARN', test: (_d, has) => has('unfamiliar-spender'), reason: 'Approving an unknown spender requires human review.' },
-  { id: 'R6', name: 'Per-transaction transfer limit', outcome: 'BLOCK', test: (_d, has) => has('over-limit') || has('unlisted-token'), reason: 'Transfer exceeds or lacks a configured spending limit.' },
+  { id: 'R5', name: 'Unrecognized spender', outcome: 'WARN', test: (_d, has) => has('unrecognized-spender'), reason: 'Approving an unrecognized spender requires human review.' },
+  { id: 'R6', name: 'Per-transaction transfer limit', outcome: 'BLOCK', test: (_d, has) => has('over-limit') || has('unlisted-token'), reason: 'Transfer exceeds the limit, or the token has no configured limit to check against.' },
   { id: 'R7', name: 'Native ETH value', outcome: 'BLOCK', test: (_d, has) => has('native-value'), reason: 'This agent is not permitted to send native ETH.' },
-  { id: 'R8', name: 'Unknown recipient', outcome: 'WARN', test: (_d, has) => has('unknown-recipient'), reason: 'Recipient is not in the address book.' },
+  { id: 'R8', name: 'Unrecognized recipient', outcome: 'WARN', test: (_d, has) => has('unknown-recipient'), reason: 'Recipient is not in the address book.' },
   { id: 'R9', name: 'Human confirms value movement', outcome: 'WARN', test: (d) => d.writesState && (d.kind === 'transfer' || d.kind === 'native-transfer'), reason: 'Any irreversible movement of funds needs explicit human confirmation.' },
   { id: 'R10', name: 'Read-only calls pass', outcome: 'ALLOW', test: (d) => !d.writesState && d.kind === 'read', reason: 'Read-only queries cannot move funds or change state.' },
 ]

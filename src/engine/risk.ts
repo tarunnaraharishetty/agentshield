@@ -1,4 +1,4 @@
-import { formatUnits } from './abi'
+import { formatUnits, KNOWN_FUNCTIONS } from './abi'
 import { ADDRESS_BOOK, lookup, POLICY, TRUSTED_SPENDERS } from './context'
 import type { DecodedTransaction, ProposedTransaction, RiskFactor } from './types'
 
@@ -18,7 +18,8 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
   }
 
   if (d.kind === 'unknown') {
-    risks.push({ id: 'unknown-function', severity: 'critical', title: 'Unrecognized function', detail: 'The calldata does not match any known, explainable function.' })
+    const malformed = d.selector ? KNOWN_FUNCTIONS[d.selector] : undefined
+    risks.push({ id: 'unknown-function', severity: 'critical', title: malformed ? 'Malformed arguments' : 'Unrecognized function', detail: malformed ? `Selector matches ${malformed}, but the arguments do not decode cleanly.` : 'The calldata does not match any known, explainable function.' })
   }
 
   if (d.kind === 'transfer' && d.amount !== undefined) {
@@ -26,7 +27,7 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     const symbol = d.token?.symbol ?? ''
     const limit = POLICY.maxTransferPerTx[symbol]
     if (limit === undefined) {
-      risks.push({ id: 'unlisted-token', severity: 'high', title: 'Token has no spending limit', detail: 'This token is not in the policy limit table.' })
+      risks.push({ id: 'unlisted-token', severity: 'high', title: 'Token has no spending limit', detail: 'There is no per-transaction limit configured for this token, so the amount cannot be checked.' })
     } else if (d.amount > limit) {
       risks.push({ id: 'over-limit', severity: 'high', title: 'Above per-transaction limit', detail: `Exceeds the ${formatUnits(limit, d.token!.decimals)} ${symbol} limit.` })
     } else {
@@ -35,19 +36,23 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     if (d.counterparty && lookup(ADDRESS_BOOK, d.counterparty)) {
       risks.push({ id: 'known-recipient', severity: 'info', title: 'Recipient is a saved contact', detail: `${d.counterpartyLabel} is in the address book.` })
     } else {
-      risks.push({ id: 'unknown-recipient', severity: 'medium', title: 'Recipient not in address book', detail: 'Funds would go to an address you have not saved.' })
+      risks.push({ id: 'unknown-recipient', severity: 'medium', title: 'Unrecognized recipient', detail: 'The recipient is not in your saved contacts. That does not make it malicious, but it cannot be verified here.' })
     }
+  }
+
+  if ((d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'read') && !d.token) {
+    risks.push({ id: 'unrecognized-token', severity: 'medium', title: 'Unrecognized token contract', detail: 'The contract is not in the token registry, so symbol and decimals are unknown. Amounts are shown in raw base units.' })
   }
 
   if (d.kind === 'approve') {
     const trusted = d.counterparty ? lookup(TRUSTED_SPENDERS, d.counterparty) : undefined
     if (d.isUnlimited) {
-      risks.push({ id: 'unlimited-approval', severity: 'critical', title: 'Unlimited token allowance', detail: 'The spender could drain the entire balance, including future deposits, without asking again.' })
+      risks.push({ id: 'unlimited-approval', severity: 'critical', title: 'Unlimited token allowance', detail: 'The spender could move the entire balance, including future deposits, without asking again.' })
     }
     if (trusted) {
       risks.push({ id: 'trusted-spender', severity: 'info', title: 'Spender is on the trusted list', detail: `${trusted} is a recognized spender.` })
     } else {
-      risks.push({ id: 'unfamiliar-spender', severity: 'high', title: 'Unfamiliar spender', detail: 'The spender is not a saved contact or a recognized protocol contract.' })
+      risks.push({ id: 'unrecognized-spender', severity: 'high', title: 'Unrecognized spender', detail: 'The spender is not a saved contact or a known protocol contract. That does not make it malicious, but it cannot be verified here.' })
     }
     risks.push({ id: 'persistent-permission', severity: 'medium', title: 'Permission persists', detail: 'Approvals stay active until explicitly revoked.' })
   }

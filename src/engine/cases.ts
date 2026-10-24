@@ -42,7 +42,7 @@ export const SIMULATED_CASES: SimulatedCase[] = [
   {
     id: 'unlimited-approval',
     title: 'Unlimited approval',
-    subtitle: 'approve · unfamiliar spender',
+    subtitle: 'approve · unrecognized spender',
     userRequest: 'Claim the bonus rewards from that airdrop site.',
     agentRationale:
       'The claim page asks for a USDC approval first. I will approve the claim contract so it can proceed.',

@@ -1,40 +1,74 @@
 import { useEffect, useMemo, useState } from 'react'
-import { shortAddr } from './engine/abi'
+import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS, shortAddr } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
+import { parseCustomInput } from './engine/custom'
 import { analyze } from './engine/pipeline'
-import type { Severity, Verdict } from './engine/types'
+import type { AnalysisResult, ProposedTransaction, Severity, Verdict } from './engine/types'
 import './App.css'
 
 const STEP_MS = 650
 const VERDICT_ICON: Record<Verdict, string> = { ALLOW: '✓', WARN: '!', BLOCK: '✕' }
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
+const CUSTOM = 'custom'
+
+const SAMPLE_TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const SAMPLE_ADDR = '0x1234567890abcdef1234567890abcdef12345678'
+const SAMPLES = [
+  { label: 'Unlimited approve', data: encodeCall(SELECTORS.approve, encodeAddress(SAMPLE_ADDR), encodeUint(MAX_UINT256)) },
+  { label: 'Approve 50 USDC', data: encodeCall(SELECTORS.approve, encodeAddress(SAMPLE_ADDR), encodeUint(50_000_000n)) },
+  { label: 'Transfer 10 USDC', data: encodeCall(SELECTORS.transfer, encodeAddress(SAMPLE_ADDR), encodeUint(10_000_000n)) },
+]
+
+const toJson = (tx: ProposedTransaction) =>
+  JSON.stringify(tx, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2)
 
 export default function App() {
-  const [caseId, setCaseId] = useState(SIMULATED_CASES[0].id)
+  const [mode, setMode] = useState(SIMULATED_CASES[0].id)
   const [runId, setRunId] = useState(0)
   const [stage, setStage] = useState(0)
+  const [toInput, setToInput] = useState('')
+  const [dataInput, setDataInput] = useState('')
+  const [errors, setErrors] = useState<{ to?: string; data?: string }>({})
+  const [customTx, setCustomTx] = useState<ProposedTransaction | null>(null)
 
-  const active = SIMULATED_CASES.find((c) => c.id === caseId)!
-  const result = useMemo(() => analyze(active.tx), [active])
+  const active = SIMULATED_CASES.find((c) => c.id === mode)
+  const tx = mode === CUSTOM ? customTx : active!.tx
+  const result = tx ? analyze(tx) : null
   const verdictByCase = useMemo(
     () => Object.fromEntries(SIMULATED_CASES.map((c) => [c.id, analyze(c.tx).decision.verdict])),
     [],
   )
 
-  const start = (id: string) => {
-    setCaseId(id)
+  const restart = () => {
     setRunId((r) => r + 1)
     setStage(0)
+  }
+  const select = (id: string) => {
+    setMode(id)
+    restart()
+  }
+  const submitCustom = () => {
+    const parsed = parseCustomInput(toInput, dataInput)
+    if (!parsed.ok) {
+      setErrors(parsed.errors)
+      return
+    }
+    setErrors({})
+    setCustomTx(parsed.tx)
+    restart()
+  }
+  const loadSample = (data: string) => {
+    setToInput(SAMPLE_TOKEN)
+    setDataInput(data)
+    setErrors({})
   }
 
   useEffect(() => {
     const timers = [1, 2, 3].map((s) => setTimeout(() => setStage(s), s * STEP_MS))
     return () => timers.forEach(clearTimeout)
-  }, [caseId, runId])
+  }, [mode, runId])
 
-  const done = stage >= 3
-  const { decoded, risks, decision, trace } = result
-  const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
+  const customVerdict = customTx ? analyze(customTx).decision.verdict : null
 
   return (
     <div className="app">
@@ -58,11 +92,7 @@ export default function App() {
           {SIMULATED_CASES.map((c, i) => {
             const v = verdictByCase[c.id]
             return (
-              <button
-                key={c.id}
-                className={`case-card ${c.id === caseId ? 'active' : ''}`}
-                onClick={() => start(c.id)}
-              >
+              <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)}>
                 <span className="case-num">{i + 1}</span>
                 <span className="case-text">
                   <span className="case-title">{c.title}</span>
@@ -72,135 +102,231 @@ export default function App() {
               </button>
             )
           })}
+          <h2 className="section-label spaced">Your own data</h2>
+          <button className={`case-card ${mode === CUSTOM ? 'active' : ''}`} onClick={() => select(CUSTOM)}>
+            <span className="case-num">+</span>
+            <span className="case-text">
+              <span className="case-title">Paste a transaction</span>
+              <span className="case-sub">to · data</span>
+            </span>
+            {customVerdict && <span className={`pill pill-${customVerdict.toLowerCase()}`}>{customVerdict}</span>}
+          </button>
           <div className="sidebar-note">
-            All transactions, addresses, contacts, and limits are simulated and hard-coded. No RPC, API, wallet, or hardware is used.
+            All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
           </div>
         </aside>
 
         <main className="main">
-          <section className="card">
-            <div className="card-head">
-              <h2>Agent proposal</h2>
-              <span className="badge badge-sim small">Simulated</span>
-            </div>
-            <div className="chat">
-              <div className="bubble user"><span className="who">User</span>{active.userRequest}</div>
-              <div className="bubble agent"><span className="who">AI agent</span>{active.agentRationale}</div>
-            </div>
-            <details className="raw">
-              <summary>Raw proposed transaction</summary>
-              <pre>{JSON.stringify(active.tx, (_k, v) => (typeof v === 'bigint' ? v.toString() : v), 2)}</pre>
-            </details>
-          </section>
-
-          <section className={`card reveal ${stage >= 1 ? 'shown' : ''}`}>
-            <div className="card-head">
-              <h2><span className="step-num">1</span>Decoded in plain language</h2>
-              <span className={`pill ${decoded.writesState ? 'pill-warn' : 'pill-allow'}`}>
-                {decoded.writesState ? 'State-changing' : 'Read-only'}
-              </span>
-            </div>
-            <p className="summary">{decoded.summary}</p>
-            <dl className="fields">
-              <dt>Contract</dt><dd>{decoded.contractLabel} <code>{shortAddr(active.tx.to)}</code></dd>
-              <dt>Function</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
-              {decoded.args.map((a) => (
-                <FieldRow key={a.name} name={a.name} value={a.display} />
-              ))}
-            </dl>
-          </section>
-
-          <section className={`card reveal ${stage >= 2 ? 'shown' : ''}`}>
-            <div className="card-head">
-              <h2><span className="step-num">2</span>Risk factors</h2>
-              <span className="muted">{risks.length} found</span>
-            </div>
-            <ul className="risks">
-              {sortedRisks.map((r) => (
-                <li key={r.id} className={`risk sev-${r.severity}`}>
-                  <span className="sev">{r.severity}</span>
-                  <div>
-                    <div className="risk-title">{r.title}</div>
-                    <div className="risk-detail">{r.detail}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className={`card reveal ${done ? 'shown' : ''}`}>
-            <div className="card-head">
-              <h2><span className="step-num">3</span>Final safety check</h2>
-              <span className="muted">Deterministic rules</span>
-            </div>
-            <div className={`verdict verdict-${decision.verdict.toLowerCase()}`}>
-              <span className="verdict-icon">{VERDICT_ICON[decision.verdict]}</span>
-              <div>
-                <div className="verdict-label">{decision.verdict}</div>
-                <div className="verdict-headline">{decision.headline}</div>
+          {mode === CUSTOM ? (
+            <section className="card">
+              <div className="card-head">
+                <h2>Paste transaction data</h2>
+                <span className="badge badge-sim small">Simulated · read-only</span>
               </div>
-            </div>
-            <table className="rules">
-              <tbody>
-                {decision.rules.map((r) => (
-                  <tr key={r.id} className={r.triggered ? 'triggered' : ''}>
-                    <td className="rule-id">{r.id}</td>
-                    <td>
-                      <div className="rule-name">{r.name}</div>
-                      {r.triggered && <div className="rule-reason">{r.reason}</div>}
-                    </td>
-                    <td className="rule-out">
-                      {r.triggered ? <span className={`pill pill-${r.outcome.toLowerCase()}`}>{r.outcome}</span> : <span className="muted">not triggered</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              <form
+                className="custom-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  submitCustom()
+                }}
+              >
+                <label>
+                  <span className="field-label">to <span className="muted">(contract address)</span></span>
+                  <input
+                    className={errors.to ? 'invalid' : ''}
+                    value={toInput}
+                    onChange={(e) => setToInput(e.target.value)}
+                    placeholder="0x…"
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  {errors.to && <span className="field-error">{errors.to}</span>}
+                </label>
+                <label>
+                  <span className="field-label">data <span className="muted">(calldata hex)</span></span>
+                  <textarea
+                    className={errors.data ? 'invalid' : ''}
+                    value={dataInput}
+                    onChange={(e) => setDataInput(e.target.value)}
+                    placeholder="0x095ea7b3…"
+                    rows={4}
+                    spellCheck={false}
+                  />
+                  {errors.data && <span className="field-error">{errors.data}</span>}
+                </label>
+                <div className="form-row">
+                  <div className="samples">
+                    <span className="muted">Fill sample:</span>
+                    {SAMPLES.map((s) => (
+                      <button type="button" key={s.label} className="chip" onClick={() => loadSample(s.data)}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="submit" className="primary">Analyze</button>
+                </div>
+                <p className="form-note">
+                  Decodes ERC-20 <code>approve</code>, <code>transfer</code>, and <code>balanceOf</code>. Analyzed as if proposed from the simulated demo wallet on chain 1 with 0 ETH. Nothing is signed or sent.
+                </p>
+              </form>
+            </section>
+          ) : (
+            <section className="card">
+              <div className="card-head">
+                <h2>Agent proposal</h2>
+                <span className="badge badge-sim small">Simulated</span>
+              </div>
+              <div className="chat">
+                <div className="bubble user"><span className="who">User</span>{active!.userRequest}</div>
+                <div className="bubble agent"><span className="who">AI agent</span>{active!.agentRationale}</div>
+              </div>
+              <details className="raw">
+                <summary>Raw proposed transaction</summary>
+                <pre>{toJson(active!.tx)}</pre>
+              </details>
+            </section>
+          )}
+
+          {tx && result ? (
+            <Analysis tx={tx} result={result} stage={stage} />
+          ) : (
+            <section className="card empty">Enter a <code>to</code> address and <code>data</code>, then press Analyze.</section>
+          )}
         </main>
 
         <aside className="trace-panel">
-          <div className="trace-head">
-            <h2 className="section-label">Activity trace</h2>
-            <button className="replay" onClick={() => start(caseId)} disabled={!done}>↻ Replay</button>
-          </div>
-          <ol className="trace">
-            {trace.map((t, i) => {
-              const status = stage > i ? 'done' : stage === i ? 'running' : 'pending'
-              return (
-                <li key={t.id} className={`trace-step ${status}`}>
-                  <span className="dot" />
-                  <div className="trace-body">
-                    <div className="trace-title">
-                      {t.label}
-                      <span className="trace-status">{status === 'done' ? `+${(i + 1) * STEP_MS} ms` : status}</span>
-                    </div>
-                    {status === 'done' && (
-                      <>
-                        <div className="trace-detail">{t.detail}</div>
-                        <ul className="trace-items">
-                          {t.items.map((it) => <li key={it}>{it}</li>)}
-                        </ul>
-                      </>
-                    )}
-                  </div>
-                </li>
-              )
-            })}
-            <li className={`trace-step final ${done ? 'done' : 'pending'}`}>
-              <span className="dot" />
-              <div className="trace-body">
-                <div className="trace-title">
-                  Outcome
-                  {done && <span className={`pill pill-${decision.verdict.toLowerCase()}`}>{decision.verdict}</span>}
-                </div>
-                {done && <div className="trace-detail">Verdict only. No signature requested, nothing broadcast.</div>}
-              </div>
-            </li>
-          </ol>
+          {result ? (
+            <Trace result={result} stage={stage} onReplay={restart} />
+          ) : (
+            <>
+              <h2 className="section-label">Activity trace</h2>
+              <p className="muted">Waiting for a transaction to analyze.</p>
+            </>
+          )}
         </aside>
       </div>
     </div>
+  )
+}
+
+function Analysis({ tx, result, stage }: { tx: ProposedTransaction; result: AnalysisResult; stage: number }) {
+  const done = stage >= 3
+  const { decoded, risks, decision } = result
+  const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
+  return (
+    <>
+      <section className={`card reveal ${stage >= 1 ? 'shown' : ''}`}>
+        <div className="card-head">
+          <h2><span className="step-num">1</span>Decoded in plain language</h2>
+          <span className={`pill ${decoded.writesState ? 'pill-warn' : 'pill-allow'}`}>
+            {decoded.writesState ? 'State-changing' : 'Read-only'}
+          </span>
+        </div>
+        <p className="summary">{decoded.summary}</p>
+        <dl className="fields">
+          <dt>Contract</dt><dd>{decoded.contractLabel} <code>{shortAddr(tx.to)}</code></dd>
+          <dt>Function</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
+          {decoded.args.map((a) => (
+            <FieldRow key={a.name} name={a.name} value={a.display} />
+          ))}
+        </dl>
+      </section>
+
+      <section className={`card reveal ${stage >= 2 ? 'shown' : ''}`}>
+        <div className="card-head">
+          <h2><span className="step-num">2</span>Risk factors</h2>
+          <span className="muted">{risks.length} found</span>
+        </div>
+        <ul className="risks">
+          {sortedRisks.map((r) => (
+            <li key={r.id} className={`risk sev-${r.severity}`}>
+              <span className="sev">{r.severity}</span>
+              <div>
+                <div className="risk-title">{r.title}</div>
+                <div className="risk-detail">{r.detail}</div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className={`card reveal ${done ? 'shown' : ''}`}>
+        <div className="card-head">
+          <h2><span className="step-num">3</span>Final safety check</h2>
+          <span className="muted">Deterministic rules</span>
+        </div>
+        <div className={`verdict verdict-${decision.verdict.toLowerCase()}`}>
+          <span className="verdict-icon">{VERDICT_ICON[decision.verdict]}</span>
+          <div>
+            <div className="verdict-label">{decision.verdict}</div>
+            <div className="verdict-headline">{decision.headline}</div>
+          </div>
+        </div>
+        <table className="rules">
+          <tbody>
+            {decision.rules.map((r) => (
+              <tr key={r.id} className={r.triggered ? 'triggered' : ''}>
+                <td className="rule-id">{r.id}</td>
+                <td>
+                  <div className="rule-name">{r.name}</div>
+                  {r.triggered && <div className="rule-reason">{r.reason}</div>}
+                </td>
+                <td className="rule-out">
+                  {r.triggered ? <span className={`pill pill-${r.outcome.toLowerCase()}`}>{r.outcome}</span> : <span className="muted">not triggered</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </>
+  )
+}
+
+function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: number; onReplay: () => void }) {
+  const done = stage >= 3
+  const { decision, trace } = result
+  return (
+    <>
+      <div className="trace-head">
+        <h2 className="section-label">Activity trace</h2>
+        <button className="replay" onClick={onReplay} disabled={!done}>↻ Replay</button>
+      </div>
+      <ol className="trace">
+        {trace.map((t, i) => {
+          const status = stage > i ? 'done' : stage === i ? 'running' : 'pending'
+          return (
+            <li key={t.id} className={`trace-step ${status}`}>
+              <span className="dot" />
+              <div className="trace-body">
+                <div className="trace-title">
+                  {t.label}
+                  <span className="trace-status">{status === 'done' ? `+${(i + 1) * STEP_MS} ms` : status}</span>
+                </div>
+                {status === 'done' && (
+                  <>
+                    <div className="trace-detail">{t.detail}</div>
+                    <ul className="trace-items">
+                      {t.items.map((it) => <li key={it}>{it}</li>)}
+                    </ul>
+                  </>
+                )}
+              </div>
+            </li>
+          )
+        })}
+        <li className={`trace-step final ${done ? 'done' : 'pending'}`}>
+          <span className="dot" />
+          <div className="trace-body">
+            <div className="trace-title">
+              Outcome
+              {done && <span className={`pill pill-${decision.verdict.toLowerCase()}`}>{decision.verdict}</span>}
+            </div>
+            {done && <div className="trace-detail">Verdict only. No signature requested, nothing broadcast.</div>}
+          </div>
+        </li>
+      </ol>
+    </>
   )
 }
 

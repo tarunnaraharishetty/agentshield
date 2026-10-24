@@ -9,6 +9,17 @@ export const SELECTORS = {
   approve: '0x095ea7b3',
 } as const
 
+export const KNOWN_FUNCTIONS: Record<string, string> = {
+  [SELECTORS.balanceOf]: 'balanceOf(address)',
+  [SELECTORS.transfer]: 'transfer(address,uint256)',
+  [SELECTORS.approve]: 'approve(address,uint256)',
+}
+
+export const selectorOf = (data: string): string | null =>
+  /^0x[0-9a-fA-F]{8}/.test(data) ? data.slice(0, 10).toLowerCase() : null
+
+export const isAddressWord = (w: string) => /^0{24}[0-9a-f]{40}$/.test(w)
+
 const word = (hex: string) => hex.replace(/^0x/, '').toLowerCase().padStart(64, '0')
 
 export const encodeAddress = (addr: Hex) => word(addr)
