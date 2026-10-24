@@ -241,8 +241,20 @@ export default function App() {
   const signature = mode === PERMIT || tx?.method === SIGN_METHOD
   const chainId = tx?.chainId ?? SIMULATED_CHAIN_ID
 
+  const reviews: ReviewItem[] = [
+    ...SIMULATED_CASES.map((c) => ({ id: c.id, title: c.title, result: analyze(c.tx) })),
+    ...(customTx ? [{ id: CUSTOM, title: 'Pasted transaction', result: analyze(customTx) }] : []),
+    ...(permit ? [{ id: PERMIT, title: 'Pasted permit', result: analyze(permit.tx, permit.decoded) }] : []),
+  ]
+
   return (
     <div className="app">
+      <header className="dash-top">
+        <nav className="crumbs" aria-label="Breadcrumb">
+          <span>Overview</span> <span aria-hidden="true">/</span> <strong>{isPreset ? active!.title : mode === PERMIT ? 'Paste a permit' : 'Paste a transaction'}</strong>
+        </nav>
+        <span className="dash-badge">Simulated · no wallet connected</span>
+      </header>
       <div className="shell">
         <aside className="side">
           <div className="brand">
@@ -282,6 +294,8 @@ export default function App() {
           </div>
         </aside>
 
+        <div className="main-col">
+        <DashboardCards reviews={reviews} />
         <main className="review result" aria-live="polite">
           <header className="review-head">
             <h2>{signature ? 'Review signature' : 'Review transaction'}</h2>
@@ -305,6 +319,8 @@ export default function App() {
             </p>
           </div>
         </main>
+        <RecentReviews reviews={reviews} active={mode} onSelect={select} />
+        </div>
       </div>
     </div>
   )
@@ -567,6 +583,97 @@ function ReviewContent({
         </p>
       </details>
     </>
+  )
+}
+
+interface ReviewItem {
+  id: string
+  title: string
+  result: AnalysisResult
+}
+
+function DashboardCards({ reviews }: { reviews: ReviewItem[] }) {
+  const count = (v: Verdict) => reviews.filter((r) => r.result.decision.verdict === v).length
+  const fired = reviews.reduce((n, r) => n + r.result.decision.rules.filter((x) => x.triggered).length, 0)
+  const cards: { label: string; value: number; tone: string; part: number }[] = [
+    { label: 'Reviewed', value: reviews.length, tone: 'neutral', part: reviews.length },
+    { label: 'Allowed', value: count('ALLOW'), tone: 'allow', part: count('ALLOW') },
+    { label: 'Review before signing', value: count('WARN'), tone: 'warn', part: count('WARN') },
+    { label: 'Blocked', value: count('BLOCK'), tone: 'block', part: count('BLOCK') },
+  ]
+  return (
+    <section className="dash-cards" aria-label="Summary">
+      {cards.map((c) => (
+        <div key={c.label} className={`kpi kpi-${c.tone}`}>
+          <p className="kpi-label">{c.label}</p>
+          <p className="kpi-value"><RollingText key={`${c.label}-${c.value}`} text={String(c.value)} /></p>
+          <span className="kpi-bar" aria-hidden="true">
+            {reviews.map((_, i) => <span key={i} className={i < c.part ? 'on' : ''} />)}
+          </span>
+        </div>
+      ))}
+      <div className="kpi kpi-rate">
+        <p className="kpi-label">Reference rate (fixed, not live)</p>
+        <p className="kpi-value rate"><img src={ethLogo} alt="" aria-hidden="true" />1 ETH = 2,329.37 USD</p>
+        <p className="kpi-note">≈ 2,329 USDC. Provided for context; not used in any verdict. {fired} rules fired across reviews.</p>
+      </div>
+    </section>
+  )
+}
+
+const FILTERS: (Verdict | 'ALL')[] = ['ALL', 'ALLOW', 'WARN', 'BLOCK']
+
+function RecentReviews({ reviews, active, onSelect }: { reviews: ReviewItem[]; active: string; onSelect: (id: string) => void }) {
+  const [filter, setFilter] = useState<Verdict | 'ALL'>('ALL')
+  const shown = reviews.filter((r) => filter === 'ALL' || r.result.decision.verdict === filter)
+  const amountOf = (r: AnalysisResult) => {
+    const d = r.decoded
+    if (d.isUnlimited) return 'Unlimited — no spending cap'
+    if (d.kind === 'read') return 'None'
+    return d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display ?? "Can't be determined"
+  }
+  return (
+    <section className="recent" aria-label="Recent reviews">
+      <div className="recent-head">
+        <h2>Recent reviews</h2>
+        <div className="filters" role="group" aria-label="Filter by verdict">
+          {FILTERS.map((f) => (
+            <button key={f} type="button" className={`filter ${filter === f ? 'active' : ''}`} aria-pressed={filter === f} onClick={() => setFilter(f)}>
+              {f === 'ALL' ? 'All' : VERDICT_SHORT[f]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="recent-scroll">
+        <table className="recent-table">
+          <thead>
+            <tr><th>#</th><th>Review</th><th>Amount</th><th>To / spender</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            {shown.map((r, i) => (
+              <tr key={r.id} className={r.id === active ? 'active' : ''}>
+                <td className="num">{i + 1}</td>
+                <td>
+                  <button type="button" className="recent-link" onClick={() => onSelect(r.id)}>
+                    <TokenBadge symbol={r.result.decoded.token?.symbol} />
+                    <span>{r.title}</span>
+                  </button>
+                </td>
+                <td>{amountOf(r.result)}</td>
+                <td>
+                  {capitalize(r.result.plain.recipient.label)}
+                  {r.result.plain.recipient.address && <code> {shortAddr(r.result.plain.recipient.address)}</code>}
+                </td>
+                <td><VerdictTag verdict={r.result.decision.verdict} /></td>
+              </tr>
+            ))}
+            {!shown.length && (
+              <tr><td colSpan={5} className="hint">No reviews with this verdict.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 
