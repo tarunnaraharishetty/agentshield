@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { encodeAddress, encodeCall, encodeUint, formatUnits, MAX_UINT256, SELECTORS } from './engine/abi'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { encodeAddress, encodeCall, encodeUint, formatUnits, MAX_UINT256, SELECTORS, shortAddr } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
 import { parseCustomInput } from './engine/custom'
 import { DEMO_DISCLAIMER } from './engine/explain'
@@ -81,6 +81,12 @@ export default function App() {
     [],
   )
 
+  const previewRef = useRef<HTMLElement>(null)
+  const revealPreview = () => {
+    if (window.matchMedia('(max-width: 960px)').matches) {
+      requestAnimationFrame(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+    }
+  }
   const restart = () => {
     setRunId((r) => r + 1)
     setStage(0)
@@ -88,6 +94,7 @@ export default function App() {
   const select = (id: string) => {
     setMode(id)
     restart()
+    if (id !== CUSTOM && id !== PERMIT) revealPreview()
   }
   const submitCustom = () => {
     const parsed = parseCustomInput(toInput, dataInput)
@@ -98,6 +105,7 @@ export default function App() {
     setErrors({})
     setCustomTx(parsed.tx)
     restart()
+    revealPreview()
   }
   const submitPermit = () => {
     const parsed = parsePermitInput(permitInput)
@@ -108,6 +116,7 @@ export default function App() {
     setPermitError(null)
     setPermit(parsed)
     restart()
+    revealPreview()
   }
   const loadSample = (data: string) => {
     setToInput(SAMPLE_TOKEN)
@@ -125,7 +134,7 @@ export default function App() {
 
   const sourcePanel =
     mode === CUSTOM ? (
-      <section className="panel">
+      <section className="paste">
         <div className="panel-head">
           <h2 className="panel-title">Paste transaction data</h2>
           <span className="tag">Simulated · read-only</span>
@@ -176,7 +185,7 @@ export default function App() {
         </form>
       </section>
     ) : mode === PERMIT ? (
-      <section className="panel">
+      <section className="paste">
         <div className="panel-head">
           <h2 className="panel-title">Paste permit typed data</h2>
           <span className="tag">Simulated · read-only</span>
@@ -222,27 +231,14 @@ export default function App() {
           </p>
         </form>
       </section>
-    ) : (
-      <section className="panel">
-        <div className="panel-head">
-          <h2 className="panel-title">Agent proposal</h2>
-          <span className="tag">Simulated</span>
-        </div>
-        <div className="chat">
-          <div className="bubble user"><span className="who">You</span>{active!.userRequest}</div>
-          <div className="bubble agent"><span className="who">AI agent</span>{active!.agentRationale}</div>
-        </div>
-        <details className="disclosure">
-          <summary>Raw proposed transaction</summary>
-          <pre className="raw-pre">{toJson(active!.tx)}</pre>
-        </details>
-      </section>
-    )
+    ) : null
 
   const ownRows = [
     { id: CUSTOM, title: 'Paste a transaction', sub: 'to · data', verdict: customVerdict },
     { id: PERMIT, title: 'Paste a permit', sub: 'EIP-712 typed data', verdict: permitVerdict },
   ]
+
+  const isPreset = mode !== CUSTOM && mode !== PERMIT
 
   return (
     <div className="app">
@@ -260,43 +256,41 @@ export default function App() {
 
         <div className="layout">
           <aside className="controls">
-            <section className="panel">
-              <h2 className="panel-title">Simulated cases</h2>
-              <div className="case-list">
-                {SIMULATED_CASES.map((c, i) => (
-                  <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)} aria-pressed={c.id === mode}>
-                    <span className="case-num">{i + 1}</span>
-                    <span className="case-text">
-                      <span className="case-title">{c.title}</span>
-                      <span className="case-sub">{c.subtitle}</span>
-                    </span>
-                    <VerdictPill verdict={verdictByCase[c.id]} />
-                  </button>
-                ))}
-              </div>
-              <h2 className="panel-title spaced">Your own data</h2>
-              <div className="case-list">
-                {ownRows.map((r) => (
-                  <button key={r.id} className={`case-card ${mode === r.id ? 'active' : ''}`} onClick={() => select(r.id)} aria-pressed={mode === r.id}>
-                    <span className="case-num">+</span>
-                    <span className="case-text">
-                      <span className="case-title">{r.title}</span>
-                      <span className="case-sub">{r.sub}</span>
-                    </span>
-                    {r.verdict && <VerdictPill verdict={r.verdict} />}
-                  </button>
-                ))}
-              </div>
-            </section>
+            <h2 className="col-title">Simulated cases</h2>
+            <div className="case-list">
+              {SIMULATED_CASES.map((c, i) => (
+                <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)} aria-pressed={c.id === mode}>
+                  <span className="case-num">{i + 1}</span>
+                  <span className="case-text">
+                    <span className="case-title">{c.title}</span>
+                    <span className="case-sub">{c.subtitle}</span>
+                  </span>
+                  <VerdictPill verdict={verdictByCase[c.id]} />
+                </button>
+              ))}
+            </div>
+            <h2 className="col-title spaced">Your own data</h2>
+            <div className="case-list">
+              {ownRows.map((r) => (
+                <button key={r.id} className={`case-card ${mode === r.id ? 'active' : ''}`} onClick={() => select(r.id)} aria-pressed={mode === r.id}>
+                  <span className="case-num">+</span>
+                  <span className="case-text">
+                    <span className="case-title">{r.title}</span>
+                    <span className="case-sub">{r.sub}</span>
+                  </span>
+                  {r.verdict && <VerdictPill verdict={r.verdict} />}
+                </button>
+              ))}
+            </div>
             {sourcePanel}
             <p className="side-note">
               All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
             </p>
           </aside>
 
-          <main className="preview-col">
+          <main className="preview-col" ref={previewRef}>
             {tx && result ? (
-              <PreviewPanel tx={tx} result={result} stage={stage} onReplay={restart} />
+              <PreviewPanel tx={tx} result={result} stage={stage} onReplay={restart} proposal={isPreset ? active : undefined} />
             ) : (
               <section className="preview empty">
                 <p className="preview-label">Transaction preview</p>
@@ -370,17 +364,45 @@ function AddressField({ address }: { address: string }) {
   )
 }
 
-function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void }) {
+function PreviewPanel({
+  tx,
+  result,
+  stage,
+  onReplay,
+  proposal,
+}: {
+  tx: ProposedTransaction
+  result: AnalysisResult
+  stage: number
+  onReplay: () => void
+  proposal?: { userRequest: string; agentRationale: string }
+}) {
   const { plain, decision, decoded } = result
   const done = stage >= 3
   const v = decision.verdict.toLowerCase()
   const signature = tx.method === SIGN_METHOD
   const rows = previewRows(decoded)
+  const contract = tx.to === ZERO_ADDRESS && signature ? 'not provided' : shortAddr(tx.to)
   return (
     <section className="preview result" aria-live="polite">
       <div className="preview-top">
         <p className="preview-label">Transaction preview</p>
         <span className="tag">{signature ? 'Signature request' : 'Simulated'}</span>
+      </div>
+
+      <div className="proposal">
+        {proposal ? (
+          <>
+            <p className="proposal-head">Agent proposal</p>
+            <p className="turn"><span className="who">You</span><span>{proposal.userRequest}</span></p>
+            <p className="turn"><span className="who">AI agent</span><span>{proposal.agentRationale}</span></p>
+          </>
+        ) : (
+          <p className="proposal-head">{signature ? 'Pasted signature data' : 'Pasted transaction data'}</p>
+        )}
+        <p className="interacting">
+          Interacting with <strong>{decoded.contractLabel}</strong> <code>{contract}</code>
+        </p>
       </div>
 
       {done ? (
@@ -414,7 +436,7 @@ function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction
               <dt>Amount</dt>
               <dd>{rows.amount}</dd>
             </div>
-            <div className="row row-stack">
+            <div className="row">
               <dt>{rows.role}</dt>
               <dd>
                 <span className="row-strong">{capitalize(plain.recipient.label)}</span>
@@ -423,11 +445,6 @@ function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction
               </dd>
             </div>
           </dl>
-
-          <section className="preview-section">
-            <h3 className="section-title">{signature ? 'What signing does' : 'What this does'}</h3>
-            <p>{plain.asksFor.text}</p>
-          </section>
 
           <section className="preview-section">
             <h3 className="section-title">{plain.reasonsTitle}</h3>
@@ -452,7 +469,12 @@ function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction
             </div>
           </section>
 
-          <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={onReplay} />
+          <section className="preview-section">
+            <h3 className="section-title">{signature ? 'What signing does' : 'What this does'}</h3>
+            <p className="secondary">{plain.asksFor.text}</p>
+          </section>
+
+          <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={onReplay} raw={proposal ? toJson(tx) : undefined} />
 
           <p className="limits">
             {signature ? 'Token contract (verifyingContract)' : 'Contract called'}:{' '}
@@ -464,13 +486,20 @@ function PreviewPanel({ tx, result, stage, onReplay }: { tx: ProposedTransaction
   )
 }
 
-function TechnicalDetails({ tx, result, stage, onReplay }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void }) {
+function TechnicalDetails({ tx, result, stage, onReplay, raw }: { tx: ProposedTransaction; result: AnalysisResult; stage: number; onReplay: () => void; raw?: string }) {
   const { decoded, risks, decision } = result
   const sortedRisks = [...risks].sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
   const triggered = decision.rules.filter((r) => r.triggered).length
   const signature = tx.method === SIGN_METHOD
   return (
     <div className="tech">
+      <h3 className="tech-title">Technical details</h3>
+      {raw && (
+        <details className="disclosure">
+          <summary>Raw proposed transaction</summary>
+          <pre className="raw-pre disclosure-body">{raw}</pre>
+        </details>
+      )}
       <details className="disclosure">
         <summary>
           Decoded {signature ? 'typed data' : 'calldata'}
