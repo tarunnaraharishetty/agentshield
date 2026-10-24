@@ -6,9 +6,9 @@ A safety firewall for AI-proposed Ethereum transactions. Three built-in **simula
 
 **Paste a transaction** lets you enter your own `to` and `data`. It decodes ERC-20 `approve`, `transfer`, and `balanceOf` locally, flags unlimited approvals, and labels unknown addresses "unrecognized". A recipient or spender that matches a saved address only in its shortened form (same `0x` + first 4 and last 4 hex characters, different full address) is blocked as a lookalike.
 
-**Paste a permit** accepts EIP-712 typed data and decodes only the standard EIP-2612 `Permit` fields (owner, spender, value, nonce, deadline). It explains that signing a permit grants spending permission even though no tokens move right away. Unlimited permits go through the same unlimited-approval rule as `approve`; finite permits and unsupported or malformed typed data are held for review. Amounts are shown in raw base units when the token is unrecognized. Nothing is signed, no signature is verified, and nothing is sent.
+**Paste a permit** accepts EIP-712 typed data and decodes only the standard EIP-2612 `Permit` fields (owner, spender, value, nonce, deadline). It explains that signing a permit grants spending permission even though no tokens move right away. Unlimited permits go through the same unlimited-approval rule as `approve`; finite permits and unsupported or malformed typed data are held for review. Amounts are shown in raw base units when the token is unrecognized. Signatures are not verified.
 
-Nothing connects to a wallet, RPC, or API. Nothing is signed or broadcast.
+This demo analyzes pasted transaction and signature data only; it doesn’t connect to a wallet or stop, sign, or send transactions. No RPC or API is used.
 
 ```bash
 npm install

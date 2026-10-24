@@ -101,7 +101,7 @@ function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplana
 }
 
 export const DEMO_DISCLAIMER =
-  'This demo analyzes transaction data only; it doesn’t connect to a wallet or stop, sign, or send transactions.'
+  'This demo analyzes pasted transaction and signature data only; it doesn’t connect to a wallet or stop, sign, or send transactions.'
 
 function verdictAdvice(d: DecodedTransaction, decision: SafetyDecision): string {
   const fired = (id: string) => decision.rules.some((r) => r.id === id && r.triggered)
