@@ -67,7 +67,7 @@ export const RULES: Rule[] = [
 const HEADLINES: Record<Verdict, string> = {
   ALLOW: 'No rule flagged this transaction.',
   WARN: 'Needs your review before signing.',
-  BLOCK: 'Blocked by a safety rule. It will not be passed on for signing.',
+  BLOCK: 'Blocked by a safety rule.',
 }
 
 export function evaluatePolicy(tx: ProposedTransaction, d: DecodedTransaction, risks: RiskFactor[]): SafetyDecision {

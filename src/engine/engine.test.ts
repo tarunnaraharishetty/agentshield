@@ -190,6 +190,8 @@ describe('plain-language explanation for beginners', () => {
     expect(r.plain.reasons[0]).toContain('take all of your USDC')
     expect(r.plain.alsoNote.length).toBeGreaterThan(0)
     expect(r.plain.nextStep).toMatch(/^Don't sign this/)
+    expect(r.plain.nextStep).toContain('it cannot stop or submit a real transaction')
+    expect(JSON.stringify(r, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))).not.toMatch(/pass(ed)? (it )?on for signing/)
   })
 
   it('gives every triggered rule a specific explanation', () => {

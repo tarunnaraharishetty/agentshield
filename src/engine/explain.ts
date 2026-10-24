@@ -94,7 +94,7 @@ function nextStep(d: DecodedTransaction, decision: SafetyDecision): string {
   if (fired('R3')) tip = ' If you really need this service, approve only the amount you need, and only to a spender you can verify.'
   else if (fired('R2')) tip = ' Ask the agent to rebuild the transaction from a source you trust.'
   else if (fired('R6')) tip = ' Send a smaller amount, or change the limit yourself only if you really intend this.'
-  return `Don't sign this. AgentShield will not pass it on for signing.${tip}`
+  return `Don't sign this. This demo only analyzes pasted data; it cannot stop or submit a real transaction. Don’t sign unless you independently verify the spender and permission.${tip}`
 }
 
 export function explainPlainly(tx: ProposedTransaction, d: DecodedTransaction, decision: SafetyDecision): PlainExplanation {
