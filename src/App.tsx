@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { encodeAddress, encodeCall, encodeUint, formatUnits, MAX_UINT256, SELECTORS, shortAddr } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
+import { SIMULATED_CHAIN_ID } from './engine/context'
 import { parseCustomInput } from './engine/custom'
 import { DEMO_DISCLAIMER } from './engine/explain'
 import { buildPermitTypedData, parsePermitInput, ZERO_ADDRESS } from './engine/permit'
@@ -81,12 +82,6 @@ export default function App() {
     [],
   )
 
-  const previewRef = useRef<HTMLElement>(null)
-  const revealPreview = () => {
-    if (window.matchMedia('(max-width: 960px)').matches) {
-      requestAnimationFrame(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-    }
-  }
   const restart = () => {
     setRunId((r) => r + 1)
     setStage(0)
@@ -94,7 +89,6 @@ export default function App() {
   const select = (id: string) => {
     setMode(id)
     restart()
-    if (id !== CUSTOM && id !== PERMIT) revealPreview()
   }
   const submitCustom = () => {
     const parsed = parseCustomInput(toInput, dataInput)
@@ -105,7 +99,6 @@ export default function App() {
     setErrors({})
     setCustomTx(parsed.tx)
     restart()
-    revealPreview()
   }
   const submitPermit = () => {
     const parsed = parsePermitInput(permitInput)
@@ -116,12 +109,6 @@ export default function App() {
     setPermitError(null)
     setPermit(parsed)
     restart()
-    revealPreview()
-  }
-  const loadSample = (data: string) => {
-    setToInput(SAMPLE_TOKEN)
-    setDataInput(data)
-    setErrors({})
   }
 
   useEffect(() => {
@@ -131,119 +118,123 @@ export default function App() {
 
   const customVerdict = customTx ? analyze(customTx).decision.verdict : null
   const permitVerdict = permit ? analyze(permit.tx, permit.decoded).decision.verdict : null
+  const isPreset = mode !== CUSTOM && mode !== PERMIT
 
-  const sourcePanel =
+  const pasteForm =
     mode === CUSTOM ? (
-      <section className="paste">
-        <div className="panel-head">
-          <h2 className="panel-title">Paste transaction data</h2>
-          <span className="tag">Simulated · read-only</span>
+      <form
+        className="paste-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submitCustom()
+        }}
+      >
+        <h2 className="paste-title">Paste transaction data</h2>
+        <label>
+          <span className="field-label">to <span className="hint">(contract address)</span></span>
+          <input
+            className={errors.to ? 'invalid' : ''}
+            value={toInput}
+            onChange={(e) => setToInput(e.target.value)}
+            placeholder="0x…"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          {errors.to && <span className="field-error">{errors.to}</span>}
+        </label>
+        <label>
+          <span className="field-label">data <span className="hint">(calldata hex)</span></span>
+          <textarea
+            className={errors.data ? 'invalid' : ''}
+            value={dataInput}
+            onChange={(e) => setDataInput(e.target.value)}
+            placeholder="0x095ea7b3…"
+            rows={3}
+            spellCheck={false}
+          />
+          {errors.data && <span className="field-error">{errors.data}</span>}
+        </label>
+        <div className="samples">
+          <span className="hint">Fill sample:</span>
+          {SAMPLES.map((s) => (
+            <button
+              type="button"
+              key={s.label}
+              className="chip"
+              onClick={() => {
+                setToInput(SAMPLE_TOKEN)
+                setDataInput(s.data)
+                setErrors({})
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
-        <form
-          className="custom-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            submitCustom()
-          }}
-        >
-          <label>
-            <span className="field-label">to <span className="muted">(contract address)</span></span>
-            <input
-              className={errors.to ? 'invalid' : ''}
-              value={toInput}
-              onChange={(e) => setToInput(e.target.value)}
-              placeholder="0x…"
-              spellCheck={false}
-              autoComplete="off"
-            />
-            {errors.to && <span className="field-error">{errors.to}</span>}
-          </label>
-          <label>
-            <span className="field-label">data <span className="muted">(calldata hex)</span></span>
-            <textarea
-              className={errors.data ? 'invalid' : ''}
-              value={dataInput}
-              onChange={(e) => setDataInput(e.target.value)}
-              placeholder="0x095ea7b3…"
-              rows={4}
-              spellCheck={false}
-            />
-            {errors.data && <span className="field-error">{errors.data}</span>}
-          </label>
-          <div className="samples">
-            <span className="muted">Fill sample:</span>
-            {SAMPLES.map((s) => (
-              <button type="button" key={s.label} className="chip" onClick={() => loadSample(s.data)}>
-                {s.label}
-              </button>
-            ))}
-          </div>
+        <div className="form-actions">
           <button type="submit" className="primary">Analyze</button>
-          <p className="form-note">
-            Decodes ERC-20 <code>approve</code>, <code>transfer</code>, and <code>balanceOf</code>. Analyzed as if proposed from the simulated demo wallet on chain 1 with 0 ETH. {DEMO_DISCLAIMER}
+          <p className="hint">
+            Decodes ERC-20 <code>approve</code>, <code>transfer</code>, and <code>balanceOf</code>. Analyzed as if proposed from the simulated demo wallet on chain 1 with 0 ETH.
           </p>
-        </form>
-      </section>
+        </div>
+      </form>
     ) : mode === PERMIT ? (
-      <section className="paste">
-        <div className="panel-head">
-          <h2 className="panel-title">Paste permit typed data</h2>
-          <span className="tag">Simulated · read-only</span>
+      <form
+        className="paste-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submitPermit()
+        }}
+      >
+        <h2 className="paste-title">Paste permit typed data</h2>
+        <label>
+          <span className="field-label">typed data <span className="hint">(EIP-712 JSON)</span></span>
+          <textarea
+            className={permitError ? 'invalid' : ''}
+            value={permitInput}
+            onChange={(e) => setPermitInput(e.target.value)}
+            placeholder='{ "types": …, "primaryType": "Permit", "domain": …, "message": … }'
+            rows={6}
+            spellCheck={false}
+          />
+          {permitError && <span className="field-error">{permitError}</span>}
+        </label>
+        <div className="samples">
+          <span className="hint">Fill sample:</span>
+          {PERMIT_SAMPLES.map((s) => (
+            <button
+              type="button"
+              key={s.label}
+              className="chip"
+              onClick={() => {
+                setPermitInput(s.json)
+                setPermitError(null)
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
-        <form
-          className="custom-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            submitPermit()
-          }}
-        >
-          <label>
-            <span className="field-label">typed data <span className="muted">(EIP-712 JSON)</span></span>
-            <textarea
-              className={permitError ? 'invalid' : ''}
-              value={permitInput}
-              onChange={(e) => setPermitInput(e.target.value)}
-              placeholder='{ "types": …, "primaryType": "Permit", "domain": …, "message": … }'
-              rows={8}
-              spellCheck={false}
-            />
-            {permitError && <span className="field-error">{permitError}</span>}
-          </label>
-          <div className="samples">
-            <span className="muted">Fill sample:</span>
-            {PERMIT_SAMPLES.map((s) => (
-              <button
-                type="button"
-                key={s.label}
-                className="chip"
-                onClick={() => {
-                  setPermitInput(s.json)
-                  setPermitError(null)
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+        <div className="form-actions">
           <button type="submit" className="primary">Analyze</button>
-          <p className="form-note">
-            Decodes only standard EIP-2612 <code>Permit</code> fields: owner, spender, value, nonce, and deadline. Signatures are not verified. {DEMO_DISCLAIMER}
+          <p className="hint">
+            Decodes only standard EIP-2612 <code>Permit</code> fields: owner, spender, value, nonce, and deadline. Signatures are not verified.
           </p>
-        </form>
-      </section>
+        </div>
+      </form>
     ) : null
 
   const ownRows = [
-    { id: CUSTOM, title: 'Paste a transaction', sub: 'to · data', verdict: customVerdict },
-    { id: PERMIT, title: 'Paste a permit', sub: 'EIP-712 typed data', verdict: permitVerdict },
+    { id: CUSTOM, title: 'Paste a transaction', verdict: customVerdict },
+    { id: PERMIT, title: 'Paste a permit', verdict: permitVerdict },
   ]
-
-  const isPreset = mode !== CUSTOM && mode !== PERMIT
+  const signature = mode === PERMIT || tx?.method === SIGN_METHOD
+  const chainId = tx?.chainId ?? SIMULATED_CHAIN_ID
 
   return (
     <div className="app">
       <div className="shell">
-        <header className="topbar">
+        <aside className="side">
           <div className="brand">
             <ShieldIcon />
             <div>
@@ -251,96 +242,167 @@ export default function App() {
               <p className="tagline">Understand what you’re approving before you sign.</p>
             </div>
           </div>
-          <span className="badge-sim">Simulated demo · no wallet connected</span>
-        </header>
 
-        <div className="layout">
-          <aside className="controls">
-            <h2 className="col-title">Simulated cases</h2>
-            <div className="case-list">
-              {SIMULATED_CASES.map((c, i) => (
-                <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)} aria-pressed={c.id === mode}>
-                  <span className="case-num">{i + 1}</span>
-                  <span className="case-text">
-                    <span className="case-title">{c.title}</span>
-                    <span className="case-sub">{c.subtitle}</span>
-                  </span>
-                  <VerdictPill verdict={verdictByCase[c.id]} />
-                </button>
-              ))}
-            </div>
-            <h2 className="col-title spaced">Your own data</h2>
-            <div className="case-list">
-              {ownRows.map((r) => (
-                <button key={r.id} className={`case-card ${mode === r.id ? 'active' : ''}`} onClick={() => select(r.id)} aria-pressed={mode === r.id}>
-                  <span className="case-num">+</span>
-                  <span className="case-text">
-                    <span className="case-title">{r.title}</span>
-                    <span className="case-sub">{r.sub}</span>
-                  </span>
-                  {r.verdict && <VerdictPill verdict={r.verdict} />}
-                </button>
-              ))}
-            </div>
-            {sourcePanel}
-            <p className="side-note">
-              All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
-            </p>
-          </aside>
+          <h2 className="side-label">Simulated cases</h2>
+          <div className="case-list">
+            {SIMULATED_CASES.map((c) => (
+              <button key={c.id} className={`case-card ${c.id === mode ? 'active' : ''}`} onClick={() => select(c.id)} aria-pressed={c.id === mode}>
+                <span className={`dot dot-${verdictByCase[c.id].toLowerCase()}`} aria-hidden="true" />
+                <span className="case-text">
+                  <span className="case-title">{c.title}</span>
+                  <span className="case-sub">{c.subtitle}</span>
+                </span>
+                <VerdictTag verdict={verdictByCase[c.id]} />
+              </button>
+            ))}
+          </div>
 
-          <main className="preview-col" ref={previewRef}>
+          <h2 className="side-label">Your own data</h2>
+          <div className="case-list">
+            {ownRows.map((r) => (
+              <button key={r.id} className={`case-card own ${mode === r.id ? 'active' : ''}`} onClick={() => select(r.id)} aria-pressed={mode === r.id}>
+                <span className="case-text">
+                  <span className="case-title">{r.title} <span aria-hidden="true">→</span></span>
+                </span>
+                {r.verdict && <VerdictTag verdict={r.verdict} />}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="review result" aria-live="polite">
+          <header className="review-head">
+            <h2>{signature ? 'Review signature' : 'Review transaction'}</h2>
+            <span className="network">{chainId === 1 ? 'Ethereum Mainnet' : `Chain ${chainId}`} · simulated</span>
+          </header>
+
+          <div className="review-body">
+            {pasteForm}
+
             {tx && result ? (
-              <PreviewPanel tx={tx} result={result} stage={stage} onReplay={restart} proposal={isPreset ? active : undefined} />
+              <ReviewContent tx={tx} result={result} stage={stage} onReplay={restart} proposal={isPreset ? active : undefined} />
             ) : (
-              <section className="preview empty">
-                <p className="preview-label">Transaction preview</p>
-                <p className="muted">
-                  {mode === PERMIT ? 'Paste EIP-712 permit typed data, then press Analyze.' : 'Enter a to address and data, then press Analyze.'}
-                </p>
-              </section>
+              <p className="empty">{mode === PERMIT ? 'Paste EIP-712 permit typed data, then press Analyze.' : 'Enter a to address and data, then press Analyze.'}</p>
             )}
-          </main>
-        </div>
 
-        <footer className="footer">
-          {DEMO_DISCLAIMER} It can’t detect every scam or guarantee protection from losses.
-        </footer>
+            <p className="notice">
+              <strong>Simulated only.</strong> {DEMO_DISCLAIMER} It can’t detect every scam or guarantee protection from losses. All transactions, addresses, contacts, and limits are simulated and hard-coded; no RPC, API, wallet, or hardware is used.
+            </p>
+          </div>
+        </main>
       </div>
     </div>
   )
 }
 
 const STAGE_TEXT = ['Decoding the data…', 'Reviewing risks…', 'Running the final safety check…']
-const VERDICT_SHORT: Record<Verdict, string> = { ALLOW: 'Allow', WARN: 'Review', BLOCK: 'Block' }
+const VERDICT_SHORT: Record<Verdict, string> = { ALLOW: 'Allowed', WARN: 'Review', BLOCK: 'Blocked' }
 
-function VerdictPill({ verdict }: { verdict: Verdict }) {
+function VerdictTag({ verdict }: { verdict: Verdict }) {
+  return <span className={`vtag vtag-${verdict.toLowerCase()}`}>{VERDICT_SHORT[verdict]}</span>
+}
+
+interface Row {
+  icon: React.ReactNode
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+}
+
+function TokenBadge({ symbol }: { symbol?: string }) {
+  return <span className={`token-badge ${symbol ? '' : 'unknown'}`} aria-hidden="true">{symbol ? symbol.slice(0, 4) : '?'}</span>
+}
+
+// Deterministic 5×5 mirrored pattern derived from the address; decorative only.
+function Identicon({ address }: { address: string }) {
+  const hex = address.toLowerCase().replace(/^0x/, '')
+  const hue = parseInt(hex.slice(0, 6), 16) % 360
+  const cells: [number, number][] = []
+  for (let y = 0; y < 5; y++)
+    for (let x = 0; x < 3; x++) {
+      if (parseInt(hex[(y * 3 + x) % hex.length], 16) % 2 === 0) {
+        cells.push([x, y])
+        if (x < 2) cells.push([4 - x, y])
+      }
+    }
   return (
-    <span className={`pill pill-${verdict.toLowerCase()}`}>
-      <span aria-hidden="true">{VERDICT_ICON[verdict]}</span> {VERDICT_SHORT[verdict]}
-    </span>
+    <svg className="identicon" viewBox="0 0 5 5" aria-hidden="true" shapeRendering="crispEdges">
+      <rect width="5" height="5" fill={`hsl(${hue} 40% 94%)`} />
+      {cells.map(([x, y]) => <rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={`hsl(${hue} 45% 38%)`} />)}
+    </svg>
   )
 }
 
-function previewRows(d: DecodedTransaction) {
-  const token = d.token?.symbol ?? 'Unrecognized token'
-  const amount = d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display ?? '—'
-  const unknownAmount = "Can't be determined"
+function buildRows(tx: ProposedTransaction, d: DecodedTransaction, plain: AnalysisResult['plain']): Row[] {
+  const tokenName = d.token ? d.token.name : 'Unrecognized token'
+  const tokenSub = d.token ? d.token.symbol : `Contract ${shortAddr(tx.to)}`
+  const amount = d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display
+  const asset: Row = { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Asset', value: tokenName, sub: tokenSub }
+  const who: Row = {
+    icon: plain.recipient.address ? <Identicon address={plain.recipient.address} /> : <span className="icon-box" aria-hidden="true">—</span>,
+    label: d.kind === 'approve' || d.kind === 'permit' || d.kind === 'unsupported-typed-data' ? 'Spender' : 'Recipient',
+    value: capitalize(plain.recipient.label),
+    sub: (
+      <>
+        {plain.recipient.address && <AddressField key={plain.recipient.address} address={plain.recipient.address} />}
+        <span>{plain.recipient.note}</span>
+      </>
+    ),
+  }
+  const perm = (value: string, sub: string): Row => ({ icon: <KeyIcon />, label: 'Permission granted', value, sub })
+  const unknown = "Can't be determined"
+
   switch (d.kind) {
     case 'read':
-      return { asset: `${token} · Balance check (read-only)`, amount: 'None', role: 'Receives' }
+      return [asset, { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: 'None', sub: 'Read-only check. Nothing moves.' }, who, perm('None', 'Read-only. Nothing is approved or sent.')]
     case 'transfer':
-      return { asset: `${token} · Token transfer`, amount, role: 'Recipient' }
-    case 'approve':
-      return { asset: `${token} · ${d.isUnlimited ? 'Unlimited spending permission' : 'Spending permission'}`, amount, role: 'Spender' }
-    case 'permit':
-      return { asset: `${token} · ${d.isUnlimited ? 'Unlimited' : 'Limited'} permission by signature`, amount, role: 'Spender' }
+      return [asset, { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: 'One-time transfer' }, who, perm('None', 'One-time transfer. Nothing can be taken later.')]
     case 'native-transfer':
-      return { asset: 'ETH · Transfer', amount: d.amount !== undefined ? `${formatUnits(d.amount, 18)} ETH` : '—', role: 'Recipient' }
+      return [
+        { icon: <TokenBadge symbol="ETH" />, label: 'Asset', value: 'Ether', sub: 'ETH' },
+        { icon: <TokenBadge symbol="ETH" />, label: 'Amount', value: d.amount !== undefined ? `${formatUnits(d.amount, 18)} ETH` : unknown, sub: 'One-time transfer' },
+        who,
+        perm('None', 'One-time transfer. Nothing can be taken later.'),
+      ]
+    case 'approve':
+    case 'permit': {
+      const how = d.kind === 'permit' ? 'Granted by signature; no tokens move when you sign.' : 'No tokens move when you approve.'
+      return [
+        asset,
+        { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Amount', value: amount ?? unknown, sub: d.isUnlimited ? 'No spending cap' : 'Spending cap' },
+        who,
+        perm(
+          d.isUnlimited ? `Unlimited ${d.token?.symbol ?? 'token'} spending` : `Spend up to ${amount}`,
+          `The spender can move these tokens later without asking again, until revoked. ${how}`,
+        ),
+      ]
+    }
     case 'unsupported-typed-data':
-      return { asset: 'Unknown signature request', amount: unknownAmount, role: 'Spender' }
+      return [
+        { icon: <TokenBadge />, label: 'Asset', value: unknown, sub: d.contractLabel },
+        { icon: <TokenBadge />, label: 'Amount', value: unknown },
+        who,
+        perm(unknown, "AgentShield couldn't decode what this signature would allow."),
+      ]
     default:
-      return { asset: 'Unknown call', amount: unknownAmount, role: 'Recipient' }
+      return [
+        { icon: <TokenBadge symbol={d.token?.symbol} />, label: 'Asset', value: d.token ? tokenName : unknown, sub: `Contract ${shortAddr(tx.to)}` },
+        { icon: <TokenBadge />, label: 'Amount', value: unknown },
+        who,
+        perm(unknown, "AgentShield couldn't decode what this call would do."),
+      ]
   }
+}
+
+function KeyIcon() {
+  return (
+    <span className="icon-box key" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="15" r="4" />
+        <path d="m11 12 9-9M17 6l3 3M14 9l2 2" />
+      </svg>
+    </span>
+  )
 }
 
 function AddressField({ address }: { address: string }) {
@@ -355,16 +417,16 @@ function AddressField({ address }: { address: string }) {
     setTimeout(() => setStatus('idle'), 1500)
   }
   return (
-    <div className="addr-field">
+    <span className="addr-field">
       <code>{address}</code>
       <button type="button" className="copy-btn" onClick={copy} aria-label={`Copy address ${address}`}>
         {status === 'copied' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy'}
       </button>
-    </div>
+    </span>
   )
 }
 
-function PreviewPanel({
+function ReviewContent({
   tx,
   result,
   stage,
@@ -381,108 +443,93 @@ function PreviewPanel({
   const done = stage >= 3
   const v = decision.verdict.toLowerCase()
   const signature = tx.method === SIGN_METHOD
-  const rows = previewRows(decoded)
-  const contract = tx.to === ZERO_ADDRESS && signature ? 'not provided' : shortAddr(tx.to)
+
+  if (!done) {
+    return (
+      <div className="verdict verdict-pending">
+        <span className="spinner" aria-hidden="true" />
+        <div className="verdict-text">
+          <h3 className="verdict-label">Analyzing…</h3>
+          <p className="verdict-headline">Step {stage + 1} of 3: {STAGE_TEXT[stage]}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <section className="preview result" aria-live="polite">
-      <div className="preview-top">
-        <p className="preview-label">Transaction preview</p>
-        <span className="tag">{signature ? 'Signature request' : 'Simulated'}</span>
+    <>
+      <div className={`verdict verdict-${v}`}>
+        <span className="verdict-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
+        <div className="verdict-text">
+          <h3 className="verdict-label">
+            {plain.verdictLabel} <span className="verdict-code">{decision.verdict}</span>
+          </h3>
+          <p className="verdict-headline">
+            {decision.headline} {plain.asksFor.title}.
+          </p>
+        </div>
       </div>
 
-      <div className="proposal">
-        {proposal ? (
-          <>
-            <p className="proposal-head">Agent proposal</p>
-            <p className="turn"><span className="who">You</span><span>{proposal.userRequest}</span></p>
-            <p className="turn"><span className="who">AI agent</span><span>{proposal.agentRationale}</span></p>
-          </>
-        ) : (
-          <p className="proposal-head">{signature ? 'Pasted signature data' : 'Pasted transaction data'}</p>
-        )}
-        <p className="interacting">
-          Interacting with <strong>{decoded.contractLabel}</strong> <code>{contract}</code>
-        </p>
-      </div>
-
-      {done ? (
-        <div className={`verdict verdict-${v}`}>
-          <span className="verdict-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
-          <div className="verdict-text">
-            <h2 className="verdict-label">
-              {plain.verdictLabel} <span className="verdict-code">{decision.verdict}</span>
-            </h2>
-            <p className="verdict-headline">{plain.asksFor.title}</p>
-          </div>
-        </div>
-      ) : (
-        <div className="verdict verdict-pending">
-          <span className="spinner" aria-hidden="true" />
-          <div className="verdict-text">
-            <h2 className="verdict-label">Analyzing…</h2>
-            <p className="verdict-headline">Step {stage + 1} of 3: {STAGE_TEXT[stage]}</p>
-          </div>
-        </div>
-      )}
-
-      {done && (
-        <>
-          <dl className="rows">
-            <div className="row">
-              <dt>{signature || decoded.kind === 'approve' ? 'Permission' : 'Asset'}</dt>
-              <dd>{rows.asset}</dd>
-            </div>
-            <div className="row">
-              <dt>Amount</dt>
-              <dd>{rows.amount}</dd>
-            </div>
-            <div className="row">
-              <dt>{rows.role}</dt>
+      <dl className="rows">
+        {buildRows(tx, decoded, plain).map((r) => (
+          <div className="row" key={r.label}>
+            <span className="row-icon">{r.icon}</span>
+            <div className="row-main">
+              <dt>{r.label}</dt>
               <dd>
-                <span className="row-strong">{capitalize(plain.recipient.label)}</span>
-                {plain.recipient.address && <AddressField key={plain.recipient.address} address={plain.recipient.address} />}
-                <span className="row-note">{plain.recipient.note}</span>
+                <span className="row-value">{r.value}</span>
+                {r.sub && <span className="row-sub">{r.sub}</span>}
               </dd>
             </div>
-          </dl>
+          </div>
+        ))}
+      </dl>
 
-          <section className="preview-section">
-            <h3 className="section-title">{plain.reasonsTitle}</h3>
-            <ul className="plain-list">
-              {plain.reasons.map((r) => <li key={r}>{r}</li>)}
+      <section className="explain">
+        <h3>{plain.reasonsTitle}</h3>
+        <ul>
+          {plain.reasons.map((r) => <li key={r}>{r}</li>)}
+        </ul>
+        {plain.alsoNote.length > 0 && (
+          <>
+            <p className="also-label">Also worth knowing</p>
+            <ul className="secondary">
+              {plain.alsoNote.map((r) => <li key={r}>{r}</li>)}
             </ul>
-            {plain.alsoNote.length > 0 && (
-              <>
-                <p className="also-label">Also worth knowing</p>
-                <ul className="plain-list secondary">
-                  {plain.alsoNote.map((r) => <li key={r}>{r}</li>)}
-                </ul>
-              </>
-            )}
-          </section>
+          </>
+        )}
+      </section>
 
-          <section className="preview-section">
-            <h3 className="section-title">What to do</h3>
-            <div className={`next-step next-${v}`}>
-              <span className="next-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
-              <p>{plain.nextStep}</p>
-            </div>
-          </section>
+      <section className="explain">
+        <h3>What to do</h3>
+        <p className={`next-step next-${v}`}>
+          <span className="next-icon" aria-hidden="true">{VERDICT_ICON[decision.verdict]}</span>
+          <span>{plain.nextStep}</span>
+        </p>
+      </section>
 
-          <section className="preview-section">
-            <h3 className="section-title">{signature ? 'What signing does' : 'What this does'}</h3>
-            <p className="secondary">{plain.asksFor.text}</p>
-          </section>
+      <section className="explain">
+        <h3>{signature ? 'What signing does' : 'What this does'}</h3>
+        <p className="secondary">{plain.asksFor.text}</p>
+      </section>
 
-          <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={onReplay} raw={proposal ? toJson(tx) : undefined} />
-
-          <p className="limits">
-            {signature ? 'Token contract (verifyingContract)' : 'Contract called'}:{' '}
-            <code>{tx.to === ZERO_ADDRESS && signature ? 'not provided' : tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.
-          </p>
-        </>
+      {proposal && (
+        <section className="proposal">
+          <h3>Agent proposal</h3>
+          <p className="turn"><span className="who">You</span><span>{proposal.userRequest}</span></p>
+          <p className="turn"><span className="who">AI agent</span><span>{proposal.agentRationale}</span></p>
+        </section>
       )}
-    </section>
+
+      <details className="tech">
+        <summary>Technical details</summary>
+        <TechnicalDetails tx={tx} result={result} stage={stage} onReplay={onReplay} raw={proposal ? toJson(tx) : undefined} />
+        <p className="limits">
+          {signature ? 'Token contract (verifyingContract)' : 'Contract called'}:{' '}
+          <code>{tx.to === ZERO_ADDRESS && signature ? 'not provided' : tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.
+        </p>
+      </details>
+    </>
   )
 }
 
@@ -492,12 +539,11 @@ function TechnicalDetails({ tx, result, stage, onReplay, raw }: { tx: ProposedTr
   const triggered = decision.rules.filter((r) => r.triggered).length
   const signature = tx.method === SIGN_METHOD
   return (
-    <div className="tech">
-      <h3 className="tech-title">Technical details</h3>
+    <div className="tech-body">
       {raw && (
         <details className="disclosure">
           <summary>Raw proposed transaction</summary>
-          <pre className="raw-pre disclosure-body">{raw}</pre>
+          <pre className="raw-pre">{raw}</pre>
         </details>
       )}
       <details className="disclosure">
@@ -547,7 +593,7 @@ function TechnicalDetails({ tx, result, stage, onReplay, raw }: { tx: ProposedTr
                   {r.triggered && <div className="rule-reason">{r.explanation}</div>}
                 </td>
                 <td className="rule-out">
-                  {r.triggered ? <VerdictPill verdict={r.outcome} /> : <span className="muted">Not triggered</span>}
+                  {r.triggered ? <VerdictTag verdict={r.outcome} /> : <span className="hint">Not triggered</span>}
                 </td>
               </tr>
             ))}
@@ -583,7 +629,7 @@ function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: num
   return (
     <>
       <div className="trace-head">
-        <span className="muted">Simulated steps, in order</span>
+        <span className="hint">Simulated steps, in order</span>
         <button className="replay" onClick={onReplay} disabled={!done}>↻ Replay</button>
       </div>
       <ol className="trace">
@@ -591,7 +637,7 @@ function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: num
           const status = stage > i ? 'done' : stage === i ? 'running' : 'pending'
           return (
             <li key={t.id} className={`trace-step ${status}`}>
-              <span className="dot" />
+              <span className="tdot" />
               <div className="trace-body">
                 <div className="trace-title">
                   {t.label}
@@ -610,11 +656,11 @@ function Trace({ result, stage, onReplay }: { result: AnalysisResult; stage: num
           )
         })}
         <li className={`trace-step final ${done ? 'done' : 'pending'}`}>
-          <span className="dot" />
+          <span className="tdot" />
           <div className="trace-body">
             <div className="trace-title">
               Outcome
-              {done && <VerdictPill verdict={decision.verdict} />}
+              {done && <VerdictTag verdict={decision.verdict} />}
             </div>
             {done && <div className="trace-detail">Verdict only. No signature requested, nothing broadcast.</div>}
           </div>
@@ -637,15 +683,11 @@ function FieldRow({ name, value }: { name: string; value: string }) {
 
 function ShieldIcon() {
   return (
-    <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M16 2 4 7v8c0 7.2 5.1 13.4 12 15 6.9-1.6 12-7.8 12-15V7L16 2Z" fill="url(#g)" />
-      <path d="m11 16 3.5 3.5L21.5 12" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#6d8bff" />
-          <stop offset="1" stopColor="#3ccf91" />
-        </linearGradient>
-      </defs>
-    </svg>
+    <span className="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32">
+        <path d="M16 3 6 7.2v7.3c0 6.4 4.3 11.9 10 13.5 5.7-1.6 10-7.1 10-13.5V7.2L16 3Z" fill="#fff" fillOpacity=".14" stroke="#fff" strokeWidth="1.6" />
+        <path d="m11.5 16 3.2 3.2 6-6.4" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
   )
 }
