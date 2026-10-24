@@ -3,6 +3,7 @@ import { SIMULATED_CASES } from './cases'
 import { analyze } from './pipeline'
 import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS } from './abi'
 import { parseCustomInput } from './custom'
+import { DEMO_DISCLAIMER } from './explain'
 import { DEMO_WALLET } from './context'
 import type { ProposedTransaction } from './types'
 
@@ -189,8 +190,8 @@ describe('plain-language explanation for beginners', () => {
     expect(r.plain.reasons[0]).toContain("can't verify who controls")
     expect(r.plain.reasons[0]).toContain('take all of your USDC')
     expect(r.plain.alsoNote.length).toBeGreaterThan(0)
-    expect(r.plain.nextStep).toMatch(/^Don't sign this/)
-    expect(r.plain.nextStep).toContain('it cannot stop or submit a real transaction')
+    expect(r.plain.nextStep).toMatch(/^Don’t sign unless you independently verify the spender and the permission\./)
+    expect(r.plain.nextStep).not.toMatch(/Don.t sign this/)
     expect(JSON.stringify(r, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))).not.toMatch(/pass(ed)? (it )?on for signing/)
   })
 
@@ -200,5 +201,16 @@ describe('plain-language explanation for beginners', () => {
 
   it('never overclaims protection or labels anything a scam', () => {
     for (const r of all()) expect(text(r)).not.toMatch(/safe to proceed|you are protected|guaranteed|scam/i)
+  })
+
+  it('ends every next step with the same general demo disclaimer', () => {
+    const pasted = parseCustomInput('0x1234567890abcdef1234567890abcdef12345678', '0x095ea7b3' + 'ff'.repeat(32))
+    if (!pasted.ok) throw new Error('expected ok')
+    const txs = [...SIMULATED_CASES.map((c) => c.tx), pasted.tx]
+    for (const tx of txs) {
+      const step = analyze(tx).plain.nextStep
+      expect(step.endsWith(DEMO_DISCLAIMER)).toBe(true)
+      expect(step).not.toMatch(/pasted data|Don.t sign this/)
+    }
   })
 })

@@ -80,7 +80,10 @@ function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplana
   }
 }
 
-function nextStep(d: DecodedTransaction, decision: SafetyDecision): string {
+export const DEMO_DISCLAIMER =
+  'This demo analyzes transaction data only; it doesn’t connect to a wallet or stop, sign, or send transactions.'
+
+function verdictAdvice(d: DecodedTransaction, decision: SafetyDecision): string {
   const fired = (id: string) => decision.rules.some((r) => r.id === id && r.triggered)
   if (decision.verdict === 'ALLOW') {
     return d.kind === 'read'
@@ -90,11 +93,16 @@ function nextStep(d: DecodedTransaction, decision: SafetyDecision): string {
   if (decision.verdict === 'WARN') {
     return 'Review before signing. Check the full address and the amount against a source you trust, and only sign if they match what you intended.'
   }
-  let tip = ''
-  if (fired('R3')) tip = ' If you really need this service, approve only the amount you need, and only to a spender you can verify.'
-  else if (fired('R2')) tip = ' Ask the agent to rebuild the transaction from a source you trust.'
-  else if (fired('R6')) tip = ' Send a smaller amount, or change the limit yourself only if you really intend this.'
-  return `Don't sign this. This demo only analyzes pasted data; it cannot stop or submit a real transaction. Don’t sign unless you independently verify the spender and permission.${tip}`
+  if (fired('R3')) return 'Don’t sign unless you independently verify the spender and the permission. If you really need this service, approve only the amount you need, and only to a spender you can verify.'
+  if (fired('R2')) return 'Don’t sign unless you can independently confirm what this call does. Ask the agent to rebuild the transaction from a source you trust.'
+  if (fired('R1')) return 'Don’t sign unless you confirm this is the network you intended.'
+  if (fired('R8')) return 'Don’t sign unless you independently verify why ETH is being sent and who receives it.'
+  if (fired('R6')) return 'Don’t sign unless you independently verify the recipient and the amount. Send a smaller amount, or change the limit yourself only if you really intend this.'
+  return 'Don’t sign unless you independently verify what this transaction does.'
+}
+
+function nextStep(d: DecodedTransaction, decision: SafetyDecision): string {
+  return `${verdictAdvice(d, decision)} ${DEMO_DISCLAIMER}`
 }
 
 export function explainPlainly(tx: ProposedTransaction, d: DecodedTransaction, decision: SafetyDecision): PlainExplanation {
