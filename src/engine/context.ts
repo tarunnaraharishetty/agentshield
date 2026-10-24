@@ -30,3 +30,23 @@ export const POLICY = {
 
 export const lookup = (table: Record<string, string>, addr: string) =>
   table[addr.toLowerCase()]
+
+export interface SavedAddress {
+  address: string
+  label: string
+}
+
+// The characters visible in the shortened display: 0x + first 4 hex … last 4 hex.
+const visibleParts = (addr: string) => {
+  const a = addr.toLowerCase()
+  return `${a.slice(0, 6)}…${a.slice(-4)}`
+}
+
+// A saved address whose shortened display matches `addr` while the full address differs.
+export function findLookalike(addr: string): SavedAddress | undefined {
+  const saved: Record<string, string> = { ...ADDRESS_BOOK, ...TRUSTED_SPENDERS }
+  const a = addr.toLowerCase()
+  if (saved[a]) return undefined
+  const match = Object.keys(saved).find((s) => visibleParts(s) === visibleParts(a))
+  return match ? { address: match, label: saved[match] } : undefined
+}

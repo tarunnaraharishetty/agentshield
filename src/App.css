@@ -75,7 +75,7 @@
 .risk { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--muted); }
 .risk .sev { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; width: 64px; flex-shrink: 0; padding-top: 3px; }
 .risk-title { font-weight: 600; font-size: 14px; }
-.risk-detail { color: var(--muted); font-size: 13px; }
+.risk-detail { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .sev-critical { border-left-color: var(--block); } .sev-critical .sev { color: var(--block); }
 .sev-high { border-left-color: #ff8a5c; } .sev-high .sev { color: #ff8a5c; }
 .sev-medium { border-left-color: var(--warn); } .sev-medium .sev { color: var(--warn); }

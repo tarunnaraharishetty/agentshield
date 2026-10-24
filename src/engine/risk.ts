@@ -1,5 +1,5 @@
 import { formatUnits, KNOWN_FUNCTIONS } from './abi'
-import { ADDRESS_BOOK, lookup, POLICY, TRUSTED_SPENDERS } from './context'
+import { ADDRESS_BOOK, findLookalike, lookup, POLICY, TRUSTED_SPENDERS } from './context'
 import type { DecodedTransaction, ProposedTransaction, RiskFactor } from './types'
 
 export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): RiskFactor[] {
@@ -65,6 +65,18 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
       risks.push({ id: 'unrecognized-spender', severity: 'high', title: 'Unrecognized spender', detail: 'The spender is not a saved contact or a known protocol contract. That does not make it malicious, but it cannot be verified here.' })
     }
     risks.push({ id: 'persistent-permission', severity: 'medium', title: 'Permission persists', detail: 'Approvals stay active until explicitly revoked.' })
+  }
+
+  if ((d.kind === 'transfer' || d.kind === 'approve') && d.counterparty) {
+    const saved = findLookalike(d.counterparty)
+    if (saved) {
+      risks.push({
+        id: 'lookalike-address',
+        severity: 'critical',
+        title: 'Lookalike of a saved address',
+        detail: `The ${d.kind === 'approve' ? 'spender' : 'recipient'} ${d.counterparty} has the same first and last characters as the saved address for ${saved.label} (${saved.address}), but the full address is different.`,
+      })
+    }
   }
 
   return risks

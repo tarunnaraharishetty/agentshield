@@ -4,7 +4,7 @@
 
 A safety firewall for AI-proposed Ethereum transactions. Three built-in **simulated** cases are decoded into plain language, reviewed for risk factors, and passed through deterministic rules that return ALLOW, WARN, or BLOCK.
 
-**Paste a transaction** lets you enter your own `to` and `data`. It decodes ERC-20 `approve`, `transfer`, and `balanceOf` locally, flags unlimited approvals, and labels unknown addresses "unrecognized".
+**Paste a transaction** lets you enter your own `to` and `data`. It decodes ERC-20 `approve`, `transfer`, and `balanceOf` locally, flags unlimited approvals, and labels unknown addresses "unrecognized". A recipient or spender that matches a saved address only in its shortened form (same `0x` + first 4 and last 4 hex characters, different full address) is blocked as a lookalike.
 
 Nothing connects to a wallet, RPC, or API. Nothing is signed or broadcast.
 

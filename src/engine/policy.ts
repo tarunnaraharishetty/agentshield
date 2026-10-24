@@ -1,5 +1,5 @@
 import { formatUnits, KNOWN_FUNCTIONS, shortAddr } from './abi'
-import { POLICY } from './context'
+import { findLookalike, POLICY } from './context'
 import type { DecodedTransaction, ProposedTransaction, RiskFactor, RuleResult, SafetyDecision, Verdict } from './types'
 
 const RANK: Record<Verdict, number> = { ALLOW: 0, WARN: 1, BLOCK: 2 }
@@ -47,6 +47,13 @@ const EXPLAIN: Record<string, (c: Ctx) => string> = {
   R9: ({ d }) => `The recipient, ${who(d)}, isn't in your saved contacts.`,
   R10: ({ d }) => `It moves ${amountOf(d)} out of your wallet, and transfers can't be undone once confirmed.`,
   R11: () => 'It only reads data. Nothing is approved and nothing is sent.',
+  R12: ({ d }) => {
+    const saved = d.counterparty ? findLookalike(d.counterparty) : undefined
+    const role = d.kind === 'approve' ? 'spender' : 'recipient'
+    return saved
+      ? `The ${role} address ${d.counterparty} is not the saved address for ${saved.label} (${saved.address}). They start and end with the same characters, so they look identical when shortened, but the full addresses are different.`
+      : `The ${role} address looks like a saved address when shortened, but the full address is different.`
+  },
 }
 
 // Deterministic: same input always yields the same verdict. Most severe triggered outcome wins.
@@ -62,6 +69,7 @@ export const RULES: Rule[] = [
   { id: 'R9', name: 'Unrecognized recipient', outcome: 'WARN', test: (_d, has) => has('unknown-recipient'), reason: 'Recipient is not in the address book.', explain: EXPLAIN.R9 },
   { id: 'R10', name: 'Human confirms value movement', outcome: 'WARN', test: (d) => d.writesState && (d.kind === 'transfer' || d.kind === 'native-transfer'), reason: 'Any irreversible movement of funds needs explicit human confirmation.', explain: EXPLAIN.R10 },
   { id: 'R11', name: 'Read-only calls pass', outcome: 'ALLOW', test: (d) => !d.writesState && d.kind === 'read', reason: 'Read-only queries cannot move funds or change state.', explain: EXPLAIN.R11 },
+  { id: 'R12', name: 'Lookalike of a saved address', outcome: 'BLOCK', test: (_d, has) => has('lookalike-address'), reason: 'An address that only matches a saved address in its shortened form must not be used in its place.', explain: EXPLAIN.R12 },
 ]
 
 const HEADLINES: Record<Verdict, string> = {

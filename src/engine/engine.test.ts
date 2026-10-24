@@ -5,7 +5,7 @@ import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS } from '.
 import { parseCustomInput } from './custom'
 import { DEMO_DISCLAIMER } from './explain'
 import { DEMO_WALLET } from './context'
-import type { ProposedTransaction } from './types'
+import type { AnalysisResult, Hex, ProposedTransaction } from './types'
 
 const byId = (id: string) => analyze(SIMULATED_CASES.find((c) => c.id === id)!.tx)
 const ALICE = SIMULATED_CASES[1].tx.data.slice(34, 74)
@@ -212,5 +212,72 @@ describe('plain-language explanation for beginners', () => {
       expect(step.endsWith(DEMO_DISCLAIMER)).toBe(true)
       expect(step).not.toMatch(/pasted data|Don.t sign this/)
     }
+  })
+})
+
+describe('lookalike of a saved address', () => {
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+  const ALICE_ADDR = '0xa0f5034c04fd9ed0ec40b1a64ddb86076d885ab8'
+  const ALICE_LOOKALIKE = '0xa0f503' + '1'.repeat(30) + '5ab8'
+  const PERMIT2 = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+  const PERMIT2_LOOKALIKE = '0x000000' + 'f'.repeat(30) + '8ba3'
+  const UNRELATED = '0x' + 'deadbeef'.repeat(5)
+  const run = (data: string) => {
+    const p = parseCustomInput(USDC, data)
+    if (!p.ok) throw new Error('expected valid input')
+    return analyze(p.tx)
+  }
+  const transferTo = (addr: string) => run(encodeCall(SELECTORS.transfer, encodeAddress(addr as Hex), encodeUint(10_000_000n)))
+  const approve = (addr: string) => run(encodeCall(SELECTORS.approve, encodeAddress(addr as Hex), encodeUint(10_000_000n)))
+  const r12 = (r: AnalysisResult) => r.decision.rules.find((x) => x.id === 'R12')!
+  const ids = (r: AnalysisResult) => r.risks.map((x) => x.id)
+
+  it('exact saved-address match stays on the saved-contact path', () => {
+    const r = transferTo(ALICE_ADDR)
+    expect(r.decision.verdict).toBe('WARN')
+    expect(ids(r)).toContain('known-recipient')
+    expect(ids(r)).not.toContain('lookalike-address')
+    expect(r12(r).triggered).toBe(false)
+  })
+
+  it('blocks a lookalike recipient and shows both full addresses with copy advice', () => {
+    const r = transferTo(ALICE_LOOKALIKE)
+    expect(r.decision.verdict).toBe('BLOCK')
+    expect(ids(r)).toContain('lookalike-address')
+    expect(r12(r).triggered).toBe(true)
+    const why = r.plain.reasons.join(' ')
+    expect(why).toContain(ALICE_LOOKALIKE)
+    expect(why).toContain(ALICE_ADDR)
+    expect(why).toContain('full addresses are different')
+    expect(r.plain.recipient.address).toBe(ALICE_LOOKALIKE)
+    expect(r.plain.recipient.note).toContain(ALICE_ADDR)
+    expect(r.plain.recipient.note).toMatch(/Copy the address from your saved contact/)
+    expect(r.plain.nextStep).toMatch(/Copy the address from your saved contact/)
+    const text = JSON.stringify([r.plain, r12(r), r.risks.find((x) => x.id === 'lookalike-address')])
+    expect(text).not.toMatch(/malicious|scam|every/i)
+  })
+
+  it('blocks a lookalike approval spender, but not the exact trusted spender', () => {
+    const look = approve(PERMIT2_LOOKALIKE)
+    expect(look.decision.verdict).toBe('BLOCK')
+    expect(r12(look).triggered).toBe(true)
+    expect(look.plain.recipient.note).toContain(PERMIT2)
+    const exact = approve(PERMIT2)
+    expect(ids(exact)).toContain('trusted-spender')
+    expect(r12(exact).triggered).toBe(false)
+    expect(exact.decision.verdict).not.toBe('BLOCK')
+  })
+
+  it('keeps an unrelated unrecognized address on its existing path', () => {
+    const r = transferTo(UNRELATED)
+    expect(r.decision.verdict).toBe('WARN')
+    expect(ids(r)).toContain('unknown-recipient')
+    expect(ids(r)).not.toContain('lookalike-address')
+    expect(r12(r).triggered).toBe(false)
+  })
+
+  it('leaves the built-in presets unchanged', () => {
+    expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
+    for (const c of SIMULATED_CASES) expect(r12(analyze(c.tx)).triggered).toBe(false)
   })
 })

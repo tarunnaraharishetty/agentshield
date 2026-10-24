@@ -1,5 +1,5 @@
 import { formatUnits } from './abi'
-import { ADDRESS_BOOK, lookup, TRUSTED_SPENDERS } from './context'
+import { ADDRESS_BOOK, findLookalike, lookup, TRUSTED_SPENDERS } from './context'
 import type { DecodedTransaction, PlainExplanation, ProposedTransaction, SafetyDecision, Verdict } from './types'
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
@@ -50,9 +50,17 @@ function asksFor(tx: ProposedTransaction, d: DecodedTransaction): PlainExplanati
   }
 }
 
+function lookalikeNote(address: string | null): string | undefined {
+  const saved = address ? findLookalike(address) : undefined
+  return saved
+    ? `This is not the saved address for ${saved.label}. Only the first and last characters match; the saved address is ${saved.address}. Copy the address from your saved contact instead.`
+    : undefined
+}
+
 function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplanation['recipient'] {
   const label = d.counterpartyLabel ?? 'unrecognized address'
   const address = d.counterparty ?? null
+  const lookalike = d.kind === 'transfer' || d.kind === 'approve' ? lookalikeNote(address) : undefined
   switch (d.kind) {
     case 'read':
       return { role: 'Who receives something', label: 'No one', address: null, note: 'A read-only check sends nothing to anyone.' }
@@ -62,18 +70,18 @@ function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplana
         role: 'Who receives the tokens',
         label,
         address,
-        note: address && lookup(ADDRESS_BOOK, address)
+        note: lookalike ?? (address && lookup(ADDRESS_BOOK, address)
           ? 'Saved in your contacts. Still compare the full address before signing.'
-          : `Not in your saved contacts, so ${UNVERIFIED}`,
+          : `Not in your saved contacts, so ${UNVERIFIED}`),
       }
     case 'approve':
       return {
         role: 'Who receives the permission (the spender)',
         label,
         address,
-        note: address && lookup(TRUSTED_SPENDERS, address)
+        note: lookalike ?? (address && lookup(TRUSTED_SPENDERS, address)
           ? "On AgentShield's list of known protocol contracts. Still compare the full address before signing."
-          : `Not a saved contact or known protocol contract, so ${UNVERIFIED}`,
+          : `Not a saved contact or known protocol contract, so ${UNVERIFIED}`),
       }
     default:
       return { role: 'Who receives it', label: 'Unknown', address: tx.to, note: "Can't be determined from the data. The address shown is the contract being called." }
@@ -93,6 +101,7 @@ function verdictAdvice(d: DecodedTransaction, decision: SafetyDecision): string 
   if (decision.verdict === 'WARN') {
     return 'Review before signing. Check the full address and the amount against a source you trust, and only sign if they match what you intended.'
   }
+  if (fired('R12')) return 'Don’t sign unless the full address matches your saved contact exactly. Copy the address from your saved contact instead of using this one.'
   if (fired('R3')) return 'Don’t sign unless you independently verify the spender and the permission. If you really need this service, approve only the amount you need, and only to a spender you can verify.'
   if (fired('R2')) return 'Don’t sign unless you can independently confirm what this call does. Ask the agent to rebuild the transaction from a source you trust.'
   if (fired('R1')) return 'Don’t sign unless you confirm this is the network you intended.'
