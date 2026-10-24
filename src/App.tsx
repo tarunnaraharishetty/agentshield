@@ -8,6 +8,7 @@ import { buildPermitTypedData, parsePermitInput, ZERO_ADDRESS } from './engine/p
 import type { PermitParseResult } from './engine/permit'
 import { analyze } from './engine/pipeline'
 import type { AnalysisResult, DecodedTransaction, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
+import ethLogo from './assets/eth-logo.png'
 import './App.css'
 
 const STEP_MS = 650
@@ -273,7 +274,10 @@ export default function App() {
         <main className="review result" aria-live="polite">
           <header className="review-head">
             <h2>{signature ? 'Review signature' : 'Review transaction'}</h2>
-            <span className="network">{chainId === 1 ? 'Ethereum Mainnet' : `Chain ${chainId}`} · simulated</span>
+            <span className="network">
+              {chainId === 1 && <img className="network-logo" src={ethLogo} alt="" aria-hidden="true" />}
+              {chainId === 1 ? 'Ethereum Mainnet' : `Chain ${chainId}`} · simulated
+            </span>
           </header>
 
           <div className="review-body">
@@ -310,6 +314,13 @@ interface Row {
 }
 
 function TokenBadge({ symbol }: { symbol?: string }) {
+  if (symbol === 'ETH') {
+    return (
+      <span className="token-badge eth" aria-hidden="true">
+        <img src={ethLogo} alt="" />
+      </span>
+    )
+  }
   return <span className={`token-badge ${symbol ? '' : 'unknown'}`} aria-hidden="true">{symbol ? symbol.slice(0, 4) : '?'}</span>
 }
 

@@ -45,7 +45,8 @@
 .review { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 1px 2px rgba(17,24,39,.04), 0 8px 24px rgba(17,24,39,.05); min-width: 0; }
 .review-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 20px 32px; border-bottom: 1px solid var(--border); }
 .review-head h2 { font-size: 18px; line-height: 24px; font-weight: 600; }
-.network { font-size: 15px; color: var(--muted); }
+.network { font-size: 15px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+.network-logo { width: 20px; height: 20px; object-fit: contain; }
 .review-body { padding: 32px; display: flex; flex-direction: column; gap: 24px; }
 @media (max-width: 600px) { .review-head { padding: 16px; } .review-body { padding: 16px; gap: 16px; } }
 .empty { color: var(--muted); padding: 16px; border: 1px dashed var(--border-strong); border-radius: 12px; text-align: center; }
@@ -76,6 +77,8 @@
 .row-value { font-size: 18px; line-height: 26px; font-weight: 600; overflow-wrap: anywhere; }
 .row-sub { font-size: 15px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere; }
 .token-badge { width: 48px; height: 48px; border-radius: 50%; background: #5568ad; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.token-badge.eth { background: #eef1f6; border: 1px solid var(--border); }
+.token-badge.eth img { width: 60%; height: 60%; object-fit: contain; }
 .token-badge.unknown { background: #6b7280; font-size: 18px; }
 .identicon { width: 48px; height: 48px; border-radius: 8px; display: block; }
 .icon-box { width: 48px; height: 48px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 20px; }
