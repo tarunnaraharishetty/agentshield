@@ -66,7 +66,7 @@ export function decodeTransaction(tx: ProposedTransaction): DecodedTransaction {
         { name: 'to', type: 'address', raw: to, display: `${shortAddr(to)} (${label})` },
         { name: 'amount', type: 'uint256', raw: amount.toString(), display: fmtAmount(amount) },
       ],
-      summary: `Send ${fmtAmount(amount)} from your wallet to ${label} (${shortAddr(to)}).`,
+      summary: `Send ${fmtAmount(amount)} from your wallet to ${label} (${shortAddr(to)}).${token ? '' : " The token and amount can't be verified here, so review before signing."}`,
       writesState,
       token,
       amount,

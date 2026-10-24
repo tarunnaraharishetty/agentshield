@@ -18,10 +18,11 @@ export const RULES: Rule[] = [
   { id: 'R4', name: 'Unlimited approvals need review', outcome: 'WARN', test: (_d, has) => has('unlimited-approval'), reason: 'Even trusted spenders should get a bounded allowance where possible.' },
   { id: 'R5', name: 'Unrecognized spender', outcome: 'WARN', test: (_d, has) => has('unrecognized-spender'), reason: 'Approving an unrecognized spender requires human review.' },
   { id: 'R6', name: 'Per-transaction transfer limit', outcome: 'BLOCK', test: (_d, has) => has('over-limit') || has('unlisted-token'), reason: 'Transfer exceeds the limit, or the token has no configured limit to check against.' },
-  { id: 'R7', name: 'Native ETH value', outcome: 'BLOCK', test: (_d, has) => has('native-value'), reason: 'This agent is not permitted to send native ETH.' },
-  { id: 'R8', name: 'Unrecognized recipient', outcome: 'WARN', test: (_d, has) => has('unknown-recipient'), reason: 'Recipient is not in the address book.' },
-  { id: 'R9', name: 'Human confirms value movement', outcome: 'WARN', test: (d) => d.writesState && (d.kind === 'transfer' || d.kind === 'native-transfer'), reason: 'Any irreversible movement of funds needs explicit human confirmation.' },
-  { id: 'R10', name: 'Read-only calls pass', outcome: 'ALLOW', test: (d) => !d.writesState && d.kind === 'read', reason: 'Read-only queries cannot move funds or change state.' },
+  { id: 'R7', name: 'Unrecognized token transfer', outcome: 'WARN', test: (d, has) => d.kind === 'transfer' && has('unrecognized-token'), reason: "The token and amount can't be verified here, so review before signing." },
+  { id: 'R8', name: 'Native ETH value', outcome: 'BLOCK', test: (_d, has) => has('native-value'), reason: 'This agent is not permitted to send native ETH.' },
+  { id: 'R9', name: 'Unrecognized recipient', outcome: 'WARN', test: (_d, has) => has('unknown-recipient'), reason: 'Recipient is not in the address book.' },
+  { id: 'R10', name: 'Human confirms value movement', outcome: 'WARN', test: (d) => d.writesState && (d.kind === 'transfer' || d.kind === 'native-transfer'), reason: 'Any irreversible movement of funds needs explicit human confirmation.' },
+  { id: 'R11', name: 'Read-only calls pass', outcome: 'ALLOW', test: (d) => !d.writesState && d.kind === 'read', reason: 'Read-only queries cannot move funds or change state.' },
 ]
 
 const HEADLINES: Record<Verdict, string> = {

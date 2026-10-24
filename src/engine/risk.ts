@@ -26,7 +26,9 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     risks.push({ id: 'irreversible', severity: 'medium', title: 'Moves funds irreversibly', detail: 'Token transfers cannot be undone once confirmed on-chain.' })
     const symbol = d.token?.symbol ?? ''
     const limit = POLICY.maxTransferPerTx[symbol]
-    if (limit === undefined) {
+    if (!d.token) {
+      // Unrecognized token: limit cannot be applied; covered by the 'unrecognized-token' factor below.
+    } else if (limit === undefined) {
       risks.push({ id: 'unlisted-token', severity: 'high', title: 'Token has no spending limit', detail: 'There is no per-transaction limit configured for this token, so the amount cannot be checked.' })
     } else if (d.amount > limit) {
       risks.push({ id: 'over-limit', severity: 'high', title: 'Above per-transaction limit', detail: `Exceeds the ${formatUnits(limit, d.token!.decimals)} ${symbol} limit.` })
@@ -41,7 +43,15 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
   }
 
   if ((d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'read') && !d.token) {
-    risks.push({ id: 'unrecognized-token', severity: 'medium', title: 'Unrecognized token contract', detail: 'The contract is not in the token registry, so symbol and decimals are unknown. Amounts are shown in raw base units.' })
+    risks.push({
+      id: 'unrecognized-token',
+      severity: 'medium',
+      title: 'Unrecognized token contract',
+      detail:
+        d.kind === 'transfer'
+          ? "This contract is not in the token registry, so the token and the amount can't be verified here (shown in raw base units). Review it carefully before signing."
+          : 'The contract is not in the token registry, so symbol and decimals are unknown. Amounts are shown in raw base units.',
+    })
   }
 
   if (d.kind === 'approve') {

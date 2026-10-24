@@ -129,6 +129,23 @@ describe('pasted transaction input', () => {
     expect(r.risks.map((x) => x.id)).toContain('unrecognized-token')
   })
 
+  it('warns (does not block) on a transfer from an unrecognized token contract', () => {
+    const data = encodeCall(SELECTORS.transfer, encodeAddress(STRANGER), encodeUint(10n ** 30n))
+    const r = parse(STRANGER, data)
+    const triggered = r.decision.rules.filter((x) => x.triggered).map((x) => x.id)
+    expect(r.decision.verdict).toBe('WARN')
+    expect(triggered).toContain('R7')
+    expect(triggered).not.toContain('R6')
+    expect(r.decoded.summary).toContain("can't be verified here")
+    expect(r.decision.rules.find((x) => x.id === 'R7')?.reason).toContain('review before signing')
+    expect(JSON.stringify(r, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)).toLowerCase()).not.toContain('scam')
+  })
+
+  it('still blocks an unlimited approval to an unrecognized spender on an unrecognized token', () => {
+    const data = encodeCall(SELECTORS.approve, encodeAddress(STRANGER), encodeUint(MAX_UINT256))
+    expect(parse(STRANGER, data).decision.verdict).toBe('BLOCK')
+  })
+
   it('flags known selectors with malformed arguments', () => {
     const r = parse(USDC, `${SELECTORS.approve}${'ff'.repeat(32)}${'00'.repeat(32)}`)
     expect(r.decoded.kind).toBe('unknown')
