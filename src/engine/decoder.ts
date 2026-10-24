@@ -9,7 +9,7 @@ const labelFor = (addr: Hex): string => {
 
 export function decodeTransaction(tx: ProposedTransaction): DecodedTransaction {
   const token = TOKENS[tx.to.toLowerCase()]
-  const contractLabel = token ? `${token.name} (${token.symbol})` : shortAddr(tx.to)
+  const contractLabel = token ? `${token.name} (${token.symbol})` : 'Unrecognized contract'
   const writesState = tx.method === 'eth_sendTransaction'
   const parts = splitCalldata(tx.data)
 
