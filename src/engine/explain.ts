@@ -17,7 +17,8 @@ const REASONS_TITLE: Record<Verdict, string> = {
 const UNVERIFIED = "AgentShield can't verify who controls it."
 
 function asksFor(tx: ProposedTransaction, d: DecodedTransaction): PlainExplanation['asksFor'] {
-  const amount = d.args.find((a) => a.name === 'amount')?.display
+  const amount = d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display
+  const deadline = d.args.find((a) => a.name === 'deadline')?.display
   const token = d.token?.symbol ?? 'this token'
   switch (d.kind) {
     case 'read':
@@ -40,6 +41,14 @@ function asksFor(tx: ProposedTransaction, d: DecodedTransaction): PlainExplanati
             title: 'A limited spending permission (token approval)',
             text: `Let the spender take up to ${amount} from your wallet whenever it wants, until it is used up or you revoke it. No tokens move when you sign, but the spender can move them afterward.`,
           }
+    case 'permit': {
+      const how = `Signing doesn't send a transaction or move tokens right away, but the signature itself grants the permission: the spender, or anyone holding the signature, can submit it before its deadline (${deadline}) and then move tokens without asking you again.`
+      return d.isUnlimited
+        ? { title: 'An unlimited spending permission, by signature (EIP-2612 permit)', text: `Let the spender take any amount of your ${token} (your whole balance, including tokens you receive later). ${how}` }
+        : { title: 'A limited spending permission, by signature (EIP-2612 permit)', text: `Let the spender take up to ${amount} from your wallet. ${how}` }
+    }
+    case 'unsupported-typed-data':
+      return { title: 'Unknown signature request', text: `AgentShield couldn't decode this typed data, so it can't tell you what signing it would allow. ${d.problem ?? ''}`.trim() }
     case 'native-transfer':
       return { title: 'An ETH transfer', text: `Send ${formatUnits(tx.value, 18)} ETH out of your wallet. This can't be undone.` }
     default:
@@ -60,7 +69,7 @@ function lookalikeNote(address: string | null): string | undefined {
 function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplanation['recipient'] {
   const label = d.counterpartyLabel ?? 'unrecognized address'
   const address = d.counterparty ?? null
-  const lookalike = d.kind === 'transfer' || d.kind === 'approve' ? lookalikeNote(address) : undefined
+  const lookalike = d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'permit' ? lookalikeNote(address) : undefined
   switch (d.kind) {
     case 'read':
       return { role: 'Who receives something', label: 'No one', address: null, note: 'A read-only check sends nothing to anyone.' }
@@ -74,7 +83,10 @@ function recipient(tx: ProposedTransaction, d: DecodedTransaction): PlainExplana
           ? 'Saved in your contacts. Still compare the full address before signing.'
           : `Not in your saved contacts, so ${UNVERIFIED}`),
       }
+    case 'unsupported-typed-data':
+      return { role: 'Who receives it', label: 'Unknown', address: null, note: "AgentShield couldn't decode who this signature would give permission to." }
     case 'approve':
+    case 'permit':
       return {
         role: 'Who receives the permission (the spender)',
         label,
@@ -99,6 +111,8 @@ function verdictAdvice(d: DecodedTransaction, decision: SafetyDecision): string 
       : "No rule flagged this, but that isn't a guarantee. Read the details before signing."
   }
   if (decision.verdict === 'WARN') {
+    if (fired('R14')) return 'Don’t sign unless you understand exactly what this message authorizes. Ask the agent which contract and permission it is for, and check that with a source you trust.'
+    if (fired('R13')) return 'Review before signing. Check the full spender address, the amount, and the deadline against a source you trust, and only sign if they match what you intended.'
     return 'Review before signing. Check the full address and the amount against a source you trust, and only sign if they match what you intended.'
   }
   if (fired('R12')) return 'Don’t sign unless the full address matches your saved contact exactly. Copy the address from your saved contact instead of using this one.'

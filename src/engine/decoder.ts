@@ -2,7 +2,7 @@ import { formatUnits, isAddressWord, KNOWN_FUNCTIONS, MAX_UINT256, selectorOf, S
 import { ADDRESS_BOOK, DEMO_WALLET, lookup, TOKENS, TRUSTED_SPENDERS } from './context'
 import type { DecodedTransaction, Hex, ProposedTransaction } from './types'
 
-const labelFor = (addr: Hex): string => {
+export const labelFor = (addr: Hex): string => {
   if (addr.toLowerCase() === DEMO_WALLET.toLowerCase()) return 'your wallet'
   return lookup(ADDRESS_BOOK, addr) ?? lookup(TRUSTED_SPENDERS, addr) ?? 'unrecognized address'
 }

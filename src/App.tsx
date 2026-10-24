@@ -2,14 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS, shortAddr } from './engine/abi'
 import { SIMULATED_CASES } from './engine/cases'
 import { parseCustomInput } from './engine/custom'
+import { buildPermitTypedData, parsePermitInput, ZERO_ADDRESS } from './engine/permit'
+import type { PermitParseResult } from './engine/permit'
 import { analyze } from './engine/pipeline'
-import type { AnalysisResult, ProposedTransaction, Severity, Verdict } from './engine/types'
+import type { AnalysisResult, Hex, ProposedTransaction, Severity, Verdict } from './engine/types'
 import './App.css'
 
 const STEP_MS = 650
 const VERDICT_ICON: Record<Verdict, string> = { ALLOW: '✓', WARN: '!', BLOCK: '✕' }
 const SEVERITY_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info']
 const CUSTOM = 'custom'
+const PERMIT = 'permit'
+const SIGN_METHOD = 'eth_signTypedData_v4'
 
 const SAMPLE_TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const SAMPLE_ADDR = '0x1234567890abcdef1234567890abcdef12345678'
@@ -17,6 +21,40 @@ const SAMPLES = [
   { label: 'Unlimited approve', data: encodeCall(SELECTORS.approve, encodeAddress(SAMPLE_ADDR), encodeUint(MAX_UINT256)) },
   { label: 'Approve 50 USDC', data: encodeCall(SELECTORS.approve, encodeAddress(SAMPLE_ADDR), encodeUint(50_000_000n)) },
   { label: 'Transfer 10 USDC', data: encodeCall(SELECTORS.transfer, encodeAddress(SAMPLE_ADDR), encodeUint(10_000_000n)) },
+]
+
+const permitJson = (value: string) =>
+  JSON.stringify(buildPermitTypedData({ token: SAMPLE_TOKEN as Hex, spender: SAMPLE_ADDR as Hex, value }), null, 2)
+const UNSUPPORTED_SAMPLE = JSON.stringify(
+  {
+    types: {
+      PermitSingle: [
+        { name: 'details', type: 'PermitDetails' },
+        { name: 'spender', type: 'address' },
+        { name: 'sigDeadline', type: 'uint256' },
+      ],
+      PermitDetails: [
+        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint160' },
+        { name: 'expiration', type: 'uint48' },
+        { name: 'nonce', type: 'uint48' },
+      ],
+    },
+    primaryType: 'PermitSingle',
+    domain: { name: 'Permit2', chainId: 1, verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3' },
+    message: {
+      details: { token: SAMPLE_TOKEN, amount: '1461501637330902918203684832716283019655932542975', expiration: '1893456000', nonce: '0' },
+      spender: SAMPLE_ADDR,
+      sigDeadline: '1893456000',
+    },
+  },
+  null,
+  2,
+)
+const PERMIT_SAMPLES = [
+  { label: 'Unlimited permit', json: permitJson(MAX_UINT256.toString()) },
+  { label: 'Permit 50 USDC', json: permitJson('50000000') },
+  { label: 'Unsupported type', json: UNSUPPORTED_SAMPLE },
 ]
 
 const toJson = (tx: ProposedTransaction) =>
@@ -30,10 +68,13 @@ export default function App() {
   const [dataInput, setDataInput] = useState('')
   const [errors, setErrors] = useState<{ to?: string; data?: string }>({})
   const [customTx, setCustomTx] = useState<ProposedTransaction | null>(null)
+  const [permitInput, setPermitInput] = useState('')
+  const [permitError, setPermitError] = useState<string | null>(null)
+  const [permit, setPermit] = useState<Extract<PermitParseResult, { ok: true }> | null>(null)
 
   const active = SIMULATED_CASES.find((c) => c.id === mode)
-  const tx = mode === CUSTOM ? customTx : active!.tx
-  const result = tx ? analyze(tx) : null
+  const tx = mode === CUSTOM ? customTx : mode === PERMIT ? (permit?.tx ?? null) : active!.tx
+  const result = mode === PERMIT ? (permit ? analyze(permit.tx, permit.decoded) : null) : tx ? analyze(tx) : null
   const verdictByCase = useMemo(
     () => Object.fromEntries(SIMULATED_CASES.map((c) => [c.id, analyze(c.tx).decision.verdict])),
     [],
@@ -57,6 +98,16 @@ export default function App() {
     setCustomTx(parsed.tx)
     restart()
   }
+  const submitPermit = () => {
+    const parsed = parsePermitInput(permitInput)
+    if (!parsed.ok) {
+      setPermitError(parsed.error)
+      return
+    }
+    setPermitError(null)
+    setPermit(parsed)
+    restart()
+  }
   const loadSample = (data: string) => {
     setToInput(SAMPLE_TOKEN)
     setDataInput(data)
@@ -69,6 +120,7 @@ export default function App() {
   }, [mode, runId])
 
   const customVerdict = customTx ? analyze(customTx).decision.verdict : null
+  const permitVerdict = permit ? analyze(permit.tx, permit.decoded).decision.verdict : null
 
   return (
     <div className="app">
@@ -111,6 +163,14 @@ export default function App() {
               <span className="case-sub">to · data</span>
             </span>
             {customVerdict && <span className={`pill pill-${customVerdict.toLowerCase()}`}>{customVerdict}</span>}
+          </button>
+          <button className={`case-card ${mode === PERMIT ? 'active' : ''}`} onClick={() => select(PERMIT)}>
+            <span className="case-num">+</span>
+            <span className="case-text">
+              <span className="case-title">Paste a permit</span>
+              <span className="case-sub">EIP-712 typed data</span>
+            </span>
+            {permitVerdict && <span className={`pill pill-${permitVerdict.toLowerCase()}`}>{permitVerdict}</span>}
           </button>
           <div className="sidebar-note">
             All transactions, addresses, contacts, and limits are simulated and hard-coded. Pasted data is only decoded locally. No RPC, API, wallet, or hardware is used.
@@ -171,6 +231,55 @@ export default function App() {
                 </p>
               </form>
             </section>
+          ) : mode === PERMIT ? (
+            <section className="card">
+              <div className="card-head">
+                <h2>Paste permit typed data</h2>
+                <span className="badge badge-sim small">Simulated · read-only</span>
+              </div>
+              <form
+                className="custom-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  submitPermit()
+                }}
+              >
+                <label>
+                  <span className="field-label">typed data <span className="muted">(EIP-712 JSON)</span></span>
+                  <textarea
+                    className={permitError ? 'invalid' : ''}
+                    value={permitInput}
+                    onChange={(e) => setPermitInput(e.target.value)}
+                    placeholder='{ "types": …, "primaryType": "Permit", "domain": …, "message": … }'
+                    rows={10}
+                    spellCheck={false}
+                  />
+                  {permitError && <span className="field-error">{permitError}</span>}
+                </label>
+                <div className="form-row">
+                  <div className="samples">
+                    <span className="muted">Fill sample:</span>
+                    {PERMIT_SAMPLES.map((s) => (
+                      <button
+                        type="button"
+                        key={s.label}
+                        className="chip"
+                        onClick={() => {
+                          setPermitInput(s.json)
+                          setPermitError(null)
+                        }}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  <button type="submit" className="primary">Analyze</button>
+                </div>
+                <p className="form-note">
+                  Decodes only standard EIP-2612 <code>Permit</code> fields: owner, spender, value, nonce, and deadline. Nothing is signed, no signature is verified, and nothing is sent.
+                </p>
+              </form>
+            </section>
           ) : (
             <section className="card">
               <div className="card-head">
@@ -194,7 +303,13 @@ export default function App() {
               <Analysis tx={tx} result={result} stage={stage} />
             </>
           ) : (
-            <section className="card empty">Enter a <code>to</code> address and <code>data</code>, then press Analyze.</section>
+            <section className="card empty">
+              {mode === PERMIT ? (
+                <>Paste EIP-712 permit typed data, then press Analyze.</>
+              ) : (
+                <>Enter a <code>to</code> address and <code>data</code>, then press Analyze.</>
+              )}
+            </section>
           )}
         </main>
 
@@ -227,13 +342,13 @@ function Analysis({ tx, result, stage }: { tx: ProposedTransaction; result: Anal
         <div className="card-head">
           <h2><span className="step-num">1</span>Decoded in plain language</h2>
           <span className={`pill ${decoded.writesState ? 'pill-warn' : 'pill-allow'}`}>
-            {decoded.writesState ? 'State-changing' : 'Read-only'}
+            {tx.method === SIGN_METHOD ? 'Signature request' : decoded.writesState ? 'State-changing' : 'Read-only'}
           </span>
         </div>
         <p className="summary">{decoded.summary}</p>
         <dl className="fields">
           <dt>Contract</dt><dd>{decoded.contractLabel} <code>{shortAddr(tx.to)}</code></dd>
-          <dt>Function</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
+          <dt>{tx.method === SIGN_METHOD ? 'Typed data' : 'Function'}</dt><dd><code>{decoded.functionSignature ?? 'unknown'}</code></dd>
           {decoded.args.map((a) => (
             <FieldRow key={a.name} name={a.name} value={a.display} />
           ))}
@@ -381,10 +496,13 @@ function BeforeYouSign({ tx, result, done }: { tx: ProposedTransaction; result: 
           <dt>Transfer</dt><dd>Sends tokens from your wallet to someone else right away.</dd>
           <dt>Approval</dt><dd>Gives another address (the “spender”) permission to move your tokens later, without asking you again, until you revoke it.</dd>
           <dt>Unlimited approval</dt><dd>An approval with no cap. The spender could move your entire balance of that token, including tokens you receive later.</dd>
+          <dt>Permit (EIP-2612)</dt><dd>A signed message that grants an approval without sending a transaction. No tokens move when you sign, but the spender can use it to take them later.</dd>
           <dt>Unrecognized</dt><dd>Not in this demo’s saved contacts or known-contract lists. It isn’t proof of anything bad; it means AgentShield can’t vouch for it.</dd>
         </dl>
       </details>
-      <p className="limits">Contract called: <code>{tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.</p>
+      <p className="limits">
+        {tx.method === SIGN_METHOD ? 'Token contract (verifyingContract)' : 'Contract called'}:{' '}
+        <code>{tx.to === ZERO_ADDRESS && tx.method === SIGN_METHOD ? 'not provided' : tx.to}</code>. These are fixed demo rules, not a scam detector, and no verdict guarantees a transaction is safe.</p>
     </section>
   )
 }

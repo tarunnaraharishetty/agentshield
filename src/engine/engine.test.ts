@@ -4,6 +4,7 @@ import { analyze } from './pipeline'
 import { encodeAddress, encodeCall, encodeUint, MAX_UINT256, SELECTORS } from './abi'
 import { parseCustomInput } from './custom'
 import { DEMO_DISCLAIMER } from './explain'
+import { buildPermitTypedData, parsePermitInput } from './permit'
 import { DEMO_WALLET } from './context'
 import type { AnalysisResult, Hex, ProposedTransaction } from './types'
 
@@ -279,5 +280,106 @@ describe('lookalike of a saved address', () => {
   it('leaves the built-in presets unchanged', () => {
     expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
     for (const c of SIMULATED_CASES) expect(r12(analyze(c.tx)).triggered).toBe(false)
+  })
+})
+
+describe('EIP-2612 permit input', () => {
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' as Hex
+  const UNKNOWN_TOKEN = '0x1234567890abcdef1234567890abcdef12345678' as Hex
+  const STRANGER = '0x' + 'deadbeef'.repeat(5)
+  const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+  const MAX = MAX_UINT256.toString()
+  type Typed = ReturnType<typeof buildPermitTypedData>
+  const typed = (spender: string, value: string, token: Hex = USDC) => buildPermitTypedData({ token, spender: spender as Hex, value })
+  const analyzeTyped = (t: Typed | object) => {
+    const p = parsePermitInput(JSON.stringify(t))
+    if (!p.ok) throw new Error(p.error)
+    return analyze(p.tx, p.decoded)
+  }
+  const rule = (r: AnalysisResult, id: string) => r.decision.rules.find((x) => x.id === id)!
+  const arg = (r: AnalysisResult, name: string) => r.decoded.args.find((a) => a.name === name)?.display
+
+  it('decodes the five standard Permit fields', () => {
+    const r = analyzeTyped(typed(STRANGER, '50000000'))
+    expect(r.decoded.kind).toBe('permit')
+    expect(r.decoded.args.map((a) => a.name)).toEqual(['owner', 'spender', 'value', 'nonce', 'deadline'])
+    expect(arg(r, 'value')).toBe('50 USDC')
+    expect(arg(r, 'nonce')).toBe('0')
+    expect(arg(r, 'deadline')).toContain('2030-01-01 00:00 UTC')
+    expect(r.plain.recipient.address).toBe(STRANGER)
+  })
+
+  it('explains that signing grants permission without sending tokens', () => {
+    const r = analyzeTyped(typed(STRANGER, '50000000'))
+    expect(r.plain.asksFor.text).toContain("doesn't send a transaction or move tokens right away")
+    expect(r.plain.asksFor.text).toContain('the signature itself grants the permission')
+    expect(rule(r, 'R13').explanation).toContain('no tokens move when you sign')
+  })
+
+  it('applies the existing unlimited-approval rule: unlimited permit to unrecognized spender is BLOCK', () => {
+    const r = analyzeTyped(typed(STRANGER, MAX))
+    expect(r.decision.verdict).toBe('BLOCK')
+    expect(rule(r, 'R3').triggered).toBe(true)
+  })
+
+  it('unlimited permit to a trusted spender is held for review', () => {
+    const r = analyzeTyped(typed(PERMIT2, MAX))
+    expect(r.decision.verdict).toBe('WARN')
+    expect(rule(r, 'R4').triggered).toBe(true)
+  })
+
+  it('finite permits are labeled for review, even to a trusted spender', () => {
+    expect(analyzeTyped(typed(STRANGER, '50000000')).decision.verdict).toBe('WARN')
+    const trusted = analyzeTyped(typed(PERMIT2, '50000000'))
+    expect(trusted.decision.verdict).toBe('WARN')
+    expect(rule(trusted, 'R13').triggered).toBe(true)
+  })
+
+  it('shows raw amounts when token decimals are unknown', () => {
+    const r = analyzeTyped(typed(STRANGER, '50000000', UNKNOWN_TOKEN))
+    expect(arg(r, 'value')).toBe('50,000,000 base units of an unrecognized token')
+    expect(r.decoded.contractLabel).toBe('Unrecognized contract')
+    expect(r.decision.verdict).toBe('WARN')
+  })
+
+  it('holds malformed typed data for review instead of decoding it', () => {
+    const base = typed(STRANGER, '50000000')
+    const cases: object[] = [
+      { ...base, message: { ...base.message, spender: '0x123' } },
+      { ...base, message: { ...base.message, value: '-1' } },
+      { ...base, message: { ...base.message, value: (MAX_UINT256 + 1n).toString() } },
+      { ...base, message: { owner: base.message.owner, spender: STRANGER, value: '1', nonce: '0' } },
+      { ...base, message: { ...base.message, extra: '1' } },
+      { ...base, types: { Permit: base.types.Permit.slice(0, 4) } },
+      { ...base, domain: { ...base.domain, verifyingContract: 'nope' } },
+    ]
+    for (const c of cases) {
+      const r = analyzeTyped(c)
+      expect(r.decoded.kind).toBe('unsupported-typed-data')
+      expect(r.decision.verdict).toBe('WARN')
+      expect(rule(r, 'R14').triggered).toBe(true)
+      expect(rule(r, 'R2').triggered).toBe(false)
+      expect(r.plain.verdictLabel).toBe('Review before signing')
+    }
+  })
+
+  it('holds unsupported typed data (e.g. Permit2 PermitSingle) for review', () => {
+    const r = analyzeTyped({ primaryType: 'PermitSingle', types: {}, domain: { chainId: 1, verifyingContract: PERMIT2 }, message: {} })
+    expect(r.decision.verdict).toBe('WARN')
+    expect(rule(r, 'R14').explanation).toContain('PermitSingle')
+    expect(r.plain.asksFor.title).toBe('Unknown signature request')
+  })
+
+  it('rejects input that is not a JSON object', () => {
+    expect(parsePermitInput('not json').ok).toBe(false)
+    expect(parsePermitInput('[1,2]').ok).toBe(false)
+  })
+
+  it('never claims to verify signatures or detect scams, and keeps presets unchanged', () => {
+    for (const t of [typed(STRANGER, MAX), typed(STRANGER, '1'), { primaryType: 'Other' }]) {
+      const text = JSON.stringify(analyzeTyped(t), (_k, v) => (typeof v === 'bigint' ? v.toString() : v))
+      expect(text).not.toMatch(/scam|signature is valid|verified signature/i)
+    }
+    expect(SIMULATED_CASES.map((c) => analyze(c.tx).decision.verdict)).toEqual(['ALLOW', 'WARN', 'BLOCK'])
   })
 })

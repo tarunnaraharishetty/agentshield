@@ -1,5 +1,5 @@
 import { formatUnits, KNOWN_FUNCTIONS } from './abi'
-import { ADDRESS_BOOK, findLookalike, lookup, POLICY, TRUSTED_SPENDERS } from './context'
+import { ADDRESS_BOOK, DEMO_WALLET, findLookalike, lookup, POLICY, TRUSTED_SPENDERS } from './context'
 import type { DecodedTransaction, ProposedTransaction, RiskFactor } from './types'
 
 export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): RiskFactor[] {
@@ -42,7 +42,7 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     }
   }
 
-  if ((d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'read') && !d.token) {
+  if ((d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'read' || d.kind === 'permit') && !d.token) {
     risks.push({
       id: 'unrecognized-token',
       severity: 'medium',
@@ -54,7 +54,18 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     })
   }
 
-  if (d.kind === 'approve') {
+  if (d.kind === 'permit') {
+    risks.push({ id: 'signature-permission', severity: 'medium', title: 'Signature grants permission', detail: 'Signing a permit sends no transaction and moves no tokens, but the signature itself grants the allowance. Anyone holding it can submit it before the deadline.' })
+    if (d.owner && d.owner.toLowerCase() !== DEMO_WALLET.toLowerCase()) {
+      risks.push({ id: 'owner-not-wallet', severity: 'medium', title: 'Owner is not the demo wallet', detail: `The permit's owner (${d.owner}) is not the simulated demo wallet, so this may not be a permission you can give, or the data may be wrong.` })
+    }
+  }
+
+  if (d.kind === 'unsupported-typed-data') {
+    risks.push({ id: 'unsupported-typed-data', severity: 'high', title: 'Unsupported or malformed typed data', detail: d.problem ?? 'The typed data is not a standard EIP-2612 Permit.' })
+  }
+
+  if (d.kind === 'approve' || d.kind === 'permit') {
     const trusted = d.counterparty ? lookup(TRUSTED_SPENDERS, d.counterparty) : undefined
     if (d.isUnlimited) {
       risks.push({ id: 'unlimited-approval', severity: 'critical', title: 'Unlimited token allowance', detail: 'The spender could move the entire balance, including future deposits, without asking again.' })
@@ -67,14 +78,14 @@ export function assessRisks(tx: ProposedTransaction, d: DecodedTransaction): Ris
     risks.push({ id: 'persistent-permission', severity: 'medium', title: 'Permission persists', detail: 'Approvals stay active until explicitly revoked.' })
   }
 
-  if ((d.kind === 'transfer' || d.kind === 'approve') && d.counterparty) {
+  if ((d.kind === 'transfer' || d.kind === 'approve' || d.kind === 'permit') && d.counterparty) {
     const saved = findLookalike(d.counterparty)
     if (saved) {
       risks.push({
         id: 'lookalike-address',
         severity: 'critical',
         title: 'Lookalike of a saved address',
-        detail: `The ${d.kind === 'approve' ? 'spender' : 'recipient'} ${d.counterparty} has the same first and last characters as the saved address for ${saved.label} (${saved.address}), but the full address is different.`,
+        detail: `The ${d.kind === 'transfer' ? 'recipient' : 'spender'} ${d.counterparty} has the same first and last characters as the saved address for ${saved.label} (${saved.address}), but the full address is different.`,
       })
     }
   }

@@ -21,7 +21,7 @@ interface Ctx {
 
 const who = (d: DecodedTransaction) =>
   d.counterparty ? `${d.counterpartyLabel ?? 'unrecognized address'} (${shortAddr(d.counterparty)})` : 'the recipient'
-const amountOf = (d: DecodedTransaction) => d.args.find((a) => a.name === 'amount')?.display ?? 'this amount'
+const amountOf = (d: DecodedTransaction) => d.args.find((a) => a.name === 'amount' || a.name === 'value')?.display ?? 'this amount'
 const tokenOf = (d: DecodedTransaction) => d.token?.symbol ?? 'this token'
 
 const EXPLAIN: Record<string, (c: Ctx) => string> = {
@@ -49,11 +49,14 @@ const EXPLAIN: Record<string, (c: Ctx) => string> = {
   R11: () => 'It only reads data. Nothing is approved and nothing is sent.',
   R12: ({ d }) => {
     const saved = d.counterparty ? findLookalike(d.counterparty) : undefined
-    const role = d.kind === 'approve' ? 'spender' : 'recipient'
+    const role = d.kind === 'transfer' ? 'recipient' : 'spender'
     return saved
       ? `The ${role} address ${d.counterparty} is not the saved address for ${saved.label} (${saved.address}). They start and end with the same characters, so they look identical when shortened, but the full addresses are different.`
       : `The ${role} address looks like a saved address when shortened, but the full address is different.`
   },
+  R13: ({ d }) =>
+    `Signing this permit gives ${who(d)} permission to spend ${d.isUnlimited ? `any amount of your ${tokenOf(d)}` : amountOf(d)}, even though no tokens move when you sign.`,
+  R14: ({ d }) => `AgentShield couldn't decode this as a standard EIP-2612 permit. ${d.problem ?? ''}`.trim(),
 }
 
 // Deterministic: same input always yields the same verdict. Most severe triggered outcome wins.
@@ -70,6 +73,8 @@ export const RULES: Rule[] = [
   { id: 'R10', name: 'Human confirms value movement', outcome: 'WARN', test: (d) => d.writesState && (d.kind === 'transfer' || d.kind === 'native-transfer'), reason: 'Any irreversible movement of funds needs explicit human confirmation.', explain: EXPLAIN.R10 },
   { id: 'R11', name: 'Read-only calls pass', outcome: 'ALLOW', test: (d) => !d.writesState && d.kind === 'read', reason: 'Read-only queries cannot move funds or change state.', explain: EXPLAIN.R11 },
   { id: 'R12', name: 'Lookalike of a saved address', outcome: 'BLOCK', test: (_d, has) => has('lookalike-address'), reason: 'An address that only matches a saved address in its shortened form must not be used in its place.', explain: EXPLAIN.R12 },
+  { id: 'R13', name: 'Permit signatures need review', outcome: 'WARN', test: (d) => d.kind === 'permit', reason: 'A signed permit grants spending permission, so a human must review it.', explain: EXPLAIN.R13 },
+  { id: 'R14', name: 'Supported typed data', outcome: 'WARN', test: (_d, has) => has('unsupported-typed-data'), reason: 'Typed data that is not a standard EIP-2612 Permit cannot be explained, so it is held for review.', explain: EXPLAIN.R14 },
 ]
 
 const HEADLINES: Record<Verdict, string> = {

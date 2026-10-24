@@ -1,7 +1,7 @@
 export type Hex = `0x${string}`
 
 export interface ProposedTransaction {
-  method: 'eth_call' | 'eth_sendTransaction'
+  method: 'eth_call' | 'eth_sendTransaction' | 'eth_signTypedData_v4'
   chainId: number
   from: Hex
   to: Hex
@@ -26,7 +26,7 @@ export interface DecodedArg {
 }
 
 export interface DecodedTransaction {
-  kind: 'read' | 'transfer' | 'approve' | 'native-transfer' | 'unknown'
+  kind: 'read' | 'transfer' | 'approve' | 'native-transfer' | 'unknown' | 'permit' | 'unsupported-typed-data'
   functionSignature: string | null
   selector: string | null
   contractLabel: string
@@ -38,6 +38,8 @@ export interface DecodedTransaction {
   isUnlimited?: boolean
   counterparty?: Hex
   counterpartyLabel?: string
+  owner?: Hex
+  problem?: string
 }
 
 export interface TokenInfo {
