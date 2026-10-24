@@ -448,7 +448,7 @@ function AddressField({ address }: { address: string }) {
   return (
     <span className="addr-field">
       <code>{address}</code>
-      <button type="button" className="copy-btn" onClick={copy} aria-label={`Copy address ${address}`}>
+      <button type="button" className={`copy-btn ${status}`} onClick={copy} aria-label={`Copy address ${address}`}>
         {status === 'copied' ? 'Copied' : status === 'failed' ? 'Failed' : 'Copy'}
       </button>
     </span>

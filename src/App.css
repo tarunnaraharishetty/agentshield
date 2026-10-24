@@ -203,3 +203,42 @@
 
 .notice { padding: 16px 20px; background: #eef1f6; border-radius: 12px; font-size: 15px; color: var(--muted); overflow-wrap: anywhere; }
 .notice strong { color: var(--text); }
+
+/* Motion: short, subtle, and disabled for reduced-motion users. */
+:root { --ease-out: cubic-bezier(.2, .8, .2, 1); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop { 0% { transform: scale(.6); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes copied { 0% { transform: scale(1); } 40% { transform: scale(.94); } 100% { transform: scale(1); } }
+
+.verdict { animation: rise .35s var(--ease-out) both; }
+.verdict:not(.verdict-pending) .verdict-icon { animation: pop .4s var(--ease-out) .08s both; }
+.verdict-pending { animation: fade .2s ease-out both; }
+.rows .row { animation: rise .35s var(--ease-out) both; }
+.rows .row:nth-child(1) { animation-delay: .06s; }
+.rows .row:nth-child(2) { animation-delay: .12s; }
+.rows .row:nth-child(3) { animation-delay: .18s; }
+.rows .row:nth-child(4) { animation-delay: .24s; }
+.explain, .proposal, .tech { animation: rise .35s var(--ease-out) .3s both; }
+.paste-form .field-error { animation: fade .2s ease-out both; }
+.empty { animation: fade .25s ease-out both; }
+
+.case-card { transition: border-color .15s ease, box-shadow .2s ease, transform .15s var(--ease-out), background-color .15s ease; }
+.case-card:active { transform: scale(.98); }
+@media (hover: hover) { .case-card:not(.active):hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(17,24,39,.06); } }
+.chip, .primary, .replay, .copy-btn { transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .12s var(--ease-out), box-shadow .15s ease; }
+.chip:active, .primary:active, .replay:active { transform: scale(.97); }
+.primary:hover { box-shadow: 0 4px 12px rgba(30,41,59,.18); }
+.copy-btn.copied { color: var(--allow); animation: copied .3s var(--ease-out); }
+.copy-btn.failed { color: var(--block); }
+.paste-form input, .paste-form textarea { transition: border-color .15s ease, box-shadow .15s ease; }
+
+.tech > summary, .disclosure > summary { transition: color .15s ease; }
+.tech > summary:hover, .disclosure > summary:hover { color: var(--navy); }
+.tech[open] > .tech-body, .tech[open] > .limits { animation: rise .25s var(--ease-out) both; }
+.disclosure[open] > :not(summary) { animation: rise .25s var(--ease-out) both; }
+.tech > summary::after, .disclosure > summary::before { transition: transform .2s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
