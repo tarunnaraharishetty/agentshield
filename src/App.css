@@ -193,7 +193,8 @@
 .paste-form .invalid { border-color: var(--block); }
 .field-error { color: var(--block); font-size: 13px; }
 .samples { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.chip { min-height: 44px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+.chip { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 12px; font-size: 14px; cursor: pointer; }
+.chip-logo { width: 18px; height: 18px; flex-shrink: 0; }
 .chip:hover { border-color: var(--navy); }
 .form-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .form-actions .hint { flex: 1; min-width: 200px; }

@@ -56,9 +56,9 @@ const UNSUPPORTED_SAMPLE = JSON.stringify(
   2,
 )
 const PERMIT_SAMPLES = [
-  { label: 'Unlimited permit', json: permitJson(MAX_UINT256.toString()) },
-  { label: 'Permit 50 USDC', json: permitJson('50000000') },
-  { label: 'Unsupported type', json: UNSUPPORTED_SAMPLE },
+  { label: 'Unlimited permit', json: permitJson(MAX_UINT256.toString()), usdc: true },
+  { label: 'Permit 50 USDC', json: permitJson('50000000'), usdc: true },
+  { label: 'Unsupported type', json: UNSUPPORTED_SAMPLE, usdc: false },
 ]
 
 const toJson = (tx: ProposedTransaction) =>
@@ -171,6 +171,7 @@ export default function App() {
                 setErrors({})
               }}
             >
+              <img className="chip-logo" src={usdcLogo} alt="" aria-hidden="true" />
               {s.label}
             </button>
           ))}
@@ -215,6 +216,7 @@ export default function App() {
                 setPermitError(null)
               }}
             >
+              {s.usdc && <img className="chip-logo" src={usdcLogo} alt="" aria-hidden="true" />}
               {s.label}
             </button>
           ))}
